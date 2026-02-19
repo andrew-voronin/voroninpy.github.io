@@ -145,25 +145,6 @@ body.life-mode .life-unit {
     animation: currentDayBlink 1.4s infinite ease-in-out;
 }
 
-.life-day.current.detail {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    grid-template-rows: repeat(4, 1fr);
-    gap: 1px;
-    padding: 1px;
-}
-
-.hour-pixel {
-    opacity: 0.15;
-    border-radius: 1px;
-    background: #00f6ff;
-}
-
-.hour-pixel.active {
-    opacity: 1;
-    animation: currentDayBlink 1.2s infinite ease-in-out;
-}
-
 @keyframes currentDayBlink {
     0%, 100% { opacity: 0.4; }
     50% { opacity: 1; }
