@@ -47,7 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
             progress: document.getElementById('life-progress'),
             percentage: document.getElementById('life-percentage')
         },
-        lifeDaysGrid: document.getElementById('life-days-grid'),
+        lifeDaysCanvas: document.getElementById('life-days-canvas'),
         quote: document.getElementById('time-quote'),
         modeOverlay: document.getElementById('mode-overlay'),
         devControls: document.getElementById('dev-controls'),
@@ -112,12 +112,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const LIFE_DOB_STORAGE_KEY = 'timeProgressDob';
     const LIFE_HOLD_DURATION_MS = 3000;
 
-    let lifeDayCells = [];
     let lifeHoldTimer = null;
     let lifeHoldTriggered = false;
     let lifeHoldCompletedAt = 0;
-    const lifeGridState = {
-        initialized: false,
+    const lifeCanvasState = {
+        context: null,
+        width: 0,
+        height: 0,
+        columns: 0,
+        rows: 0,
+        cellSize: 0,
+        gap: 0,
+        offsetX: 0,
+        offsetY: 0,
+        dpr: 1,
+        resizeObserver: null,
         lastLivedDays: null,
         lastCurrentDayIndex: null
     };
@@ -586,9 +595,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!month || !day || !year) {
             localStorage.removeItem(LIFE_DOB_STORAGE_KEY);
-            lifeGridState.initialized = false;
-            lifeGridState.lastLivedDays = null;
-            lifeGridState.lastCurrentDayIndex = null;
+            resetLifeCanvasRenderCache();
             return;
         }
 
@@ -597,9 +604,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!isValidDate || dob > new Date()) {
             localStorage.removeItem(LIFE_DOB_STORAGE_KEY);
-            lifeGridState.initialized = false;
-            lifeGridState.lastLivedDays = null;
-            lifeGridState.lastCurrentDayIndex = null;
+            resetLifeCanvasRenderCache();
             return;
         }
 
@@ -608,9 +613,7 @@ document.addEventListener('DOMContentLoaded', () => {
             month: Number(month),
             day: Number(day)
         }));
-        lifeGridState.initialized = false;
-        lifeGridState.lastLivedDays = null;
-        lifeGridState.lastCurrentDayIndex = null;
+        resetLifeCanvasRenderCache();
     }
 
     function setupDobControls() {
@@ -663,16 +666,116 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function createLifeDayGrid() {
-        const fragment = document.createDocumentFragment();
-        for (let index = 0; index < LIFE_TOTAL_DAYS; index++) {
-            const cell = document.createElement('div');
-            cell.className = 'life-day';
-            cell.dataset.dayIndex = String(index);
-            fragment.appendChild(cell);
-            lifeDayCells.push(cell);
+    function resetLifeCanvasRenderCache() {
+        lifeCanvasState.lastLivedDays = null;
+        lifeCanvasState.lastCurrentDayIndex = null;
+    }
+
+    function getBestCanvasGridLayout(width, height) {
+        let best = { columns: 1, rows: LIFE_TOTAL_DAYS, cellSize: 1, gap: 1, offsetX: 0, offsetY: 0 };
+
+        for (let columns = 60; columns <= 400; columns++) {
+            const rows = Math.ceil(LIFE_TOTAL_DAYS / columns);
+            if (rows <= 0) {
+                continue;
+            }
+
+            const gap = Math.max(0.5, Math.min(1.5, Math.floor(Math.min(width, height) / 240)));
+            const cellWidth = (width - (columns - 1) * gap) / columns;
+            const cellHeight = (height - (rows - 1) * gap) / rows;
+            const cellSize = Math.floor(Math.min(cellWidth, cellHeight));
+
+            if (cellSize < 1) {
+                continue;
+            }
+
+            const usedWidth = columns * cellSize + (columns - 1) * gap;
+            const usedHeight = rows * cellSize + (rows - 1) * gap;
+            const offsetX = Math.floor((width - usedWidth) / 2);
+            const offsetY = Math.floor((height - usedHeight) / 2);
+
+            if (cellSize > best.cellSize || (cellSize === best.cellSize && usedHeight > (best.rows * best.cellSize))) {
+                best = { columns, rows, cellSize, gap, offsetX, offsetY };
+            }
         }
-        elements.lifeDaysGrid.appendChild(fragment);
+
+        return best;
+    }
+
+    function resizeLifeCanvas(force = false) {
+        const canvas = elements.lifeDaysCanvas;
+        if (!canvas) {
+            return;
+        }
+
+        const rect = canvas.getBoundingClientRect();
+        const cssWidth = Math.max(1, Math.floor(rect.width));
+        const cssHeight = Math.max(1, Math.floor(rect.height));
+        const dpr = window.devicePixelRatio || 1;
+        const width = Math.floor(cssWidth * dpr);
+        const height = Math.floor(cssHeight * dpr);
+
+        if (!force && lifeCanvasState.width === width && lifeCanvasState.height === height && lifeCanvasState.dpr === dpr) {
+            return;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const context = canvas.getContext('2d', { alpha: false });
+        context.imageSmoothingEnabled = false;
+
+        const layout = getBestCanvasGridLayout(width, height);
+
+        lifeCanvasState.context = context;
+        lifeCanvasState.width = width;
+        lifeCanvasState.height = height;
+        lifeCanvasState.dpr = dpr;
+        lifeCanvasState.columns = layout.columns;
+        lifeCanvasState.rows = layout.rows;
+        lifeCanvasState.cellSize = layout.cellSize;
+        lifeCanvasState.gap = layout.gap;
+        lifeCanvasState.offsetX = layout.offsetX;
+        lifeCanvasState.offsetY = layout.offsetY;
+
+        resetLifeCanvasRenderCache();
+    }
+
+    function drawLifeDay(index, fillStyle) {
+        const { context, columns, cellSize, gap, offsetX, offsetY } = lifeCanvasState;
+        if (!context) {
+            return;
+        }
+
+        const column = index % columns;
+        const row = Math.floor(index / columns);
+        const x = Math.floor(offsetX + column * (cellSize + gap));
+        const y = Math.floor(offsetY + row * (cellSize + gap));
+        context.fillStyle = fillStyle;
+        context.fillRect(x, y, cellSize, cellSize);
+    }
+
+    function clearLifeCanvas() {
+        const { context, width, height } = lifeCanvasState;
+        if (!context) {
+            return;
+        }
+
+        context.fillStyle = '#05070d';
+        context.fillRect(0, 0, width, height);
+    }
+
+    function createLifeDayGrid() {
+        resizeLifeCanvas(true);
+
+        if (typeof ResizeObserver !== 'undefined' && elements.lifeDaysCanvas) {
+            lifeCanvasState.resizeObserver = new ResizeObserver(() => {
+                resizeLifeCanvas(true);
+                const stats = getLifeStats(getCurrentTime());
+                renderLifeDayGrid(stats);
+            });
+            lifeCanvasState.resizeObserver.observe(elements.lifeDaysCanvas);
+        }
     }
 
     function openDobModal() {
@@ -706,53 +809,51 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderLifeDayGrid(lifeStats) {
         const { livedDays, currentDayIndex } = lifeStats;
-        if (!lifeDayCells.length) {
+        if (!lifeCanvasState.context) {
+            resizeLifeCanvas(true);
+        }
+
+        if (!lifeCanvasState.context) {
             return;
         }
 
-        if (!lifeGridState.initialized) {
-            for (let index = 0; index < livedDays; index++) {
-                lifeDayCells[index].classList.add('lived');
-            }
-
-            if (livedDays < LIFE_TOTAL_DAYS && lifeDayCells[currentDayIndex]) {
-                lifeDayCells[currentDayIndex].classList.add('current');
-            }
-
-            lifeGridState.initialized = true;
-            lifeGridState.lastLivedDays = livedDays;
-            lifeGridState.lastCurrentDayIndex = currentDayIndex;
+        if (lifeCanvasState.lastLivedDays === livedDays && lifeCanvasState.lastCurrentDayIndex === currentDayIndex) {
             return;
         }
 
-        if (lifeGridState.lastLivedDays !== livedDays) {
-            const previousLivedDays = lifeGridState.lastLivedDays;
+        const livedColor = 'rgba(74, 159, 255, 0.88)';
+        const emptyColor = 'rgba(255, 255, 255, 0.14)';
+        const currentColor = 'rgba(0, 246, 255, 0.96)';
+
+        if (lifeCanvasState.lastLivedDays === null) {
+            clearLifeCanvas();
+            for (let index = 0; index < LIFE_TOTAL_DAYS; index++) {
+                drawLifeDay(index, index < livedDays ? livedColor : emptyColor);
+            }
+        } else if (lifeCanvasState.lastLivedDays !== livedDays) {
+            const previousLivedDays = lifeCanvasState.lastLivedDays;
             if (previousLivedDays < livedDays) {
                 for (let index = previousLivedDays; index < livedDays; index++) {
-                    lifeDayCells[index].classList.add('lived');
-                    lifeDayCells[index].classList.remove('current');
+                    drawLifeDay(index, livedColor);
                 }
             } else {
                 for (let index = livedDays; index < previousLivedDays; index++) {
-                    lifeDayCells[index].classList.remove('lived');
-                    lifeDayCells[index].classList.remove('current');
+                    drawLifeDay(index, emptyColor);
                 }
             }
-            lifeGridState.lastLivedDays = livedDays;
         }
 
-        if (lifeGridState.lastCurrentDayIndex !== currentDayIndex) {
-            const previousCurrentCell = lifeDayCells[lifeGridState.lastCurrentDayIndex];
-            if (previousCurrentCell) {
-                previousCurrentCell.classList.remove('current');
-            }
+        const previousCurrentDayIndex = lifeCanvasState.lastCurrentDayIndex;
+        if (typeof previousCurrentDayIndex === 'number' && previousCurrentDayIndex < LIFE_TOTAL_DAYS) {
+            drawLifeDay(previousCurrentDayIndex, previousCurrentDayIndex < livedDays ? livedColor : emptyColor);
         }
 
-        if (livedDays < LIFE_TOTAL_DAYS && lifeDayCells[currentDayIndex]) {
-            lifeDayCells[currentDayIndex].classList.add('current');
+        if (livedDays < LIFE_TOTAL_DAYS) {
+            drawLifeDay(currentDayIndex, currentColor);
         }
 
-        lifeGridState.lastCurrentDayIndex = currentDayIndex;
+        lifeCanvasState.lastLivedDays = livedDays;
+        lifeCanvasState.lastCurrentDayIndex = currentDayIndex;
     }
 
     function getDobFromSelection() {
