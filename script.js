@@ -111,6 +111,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const LIFE_TOTAL_DAYS = 29220;
     const LIFE_DOB_STORAGE_KEY = 'timeProgressDob';
     const LIFE_HOLD_DURATION_MS = 3000;
+    const LIFE_CANVAS_CSS_HYSTERESIS_PX = 1;
+    const LIFE_RESIZE_GUARD_WINDOW_MS = 1200;
+    const LIFE_RESIZE_GUARD_MIN_EVENTS = 12;
+    const LIFE_RESIZE_GUARD_COOLDOWN_MS = 1200;
 
     let lifeHoldTimer = null;
     let lifeHoldTriggered = false;
@@ -127,7 +131,11 @@ document.addEventListener('DOMContentLoaded', () => {
         offsetX: 0,
         offsetY: 0,
         dpr: 1,
+        cssWidth: 0,
+        cssHeight: 0,
         resizeObserver: null,
+        resizeEvents: [],
+        resizeGuardUntil: 0,
         lastLivedDays: null,
         lastCurrentDayIndex: null
     };
@@ -709,11 +717,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const rect = canvas.getBoundingClientRect();
-        const cssWidth = Math.max(1, Math.floor(rect.width));
-        const cssHeight = Math.max(1, Math.floor(rect.height));
+        const measuredCssWidth = Math.max(1, rect.width);
+        const measuredCssHeight = Math.max(1, rect.height);
+        const previousCssWidth = lifeCanvasState.cssWidth || measuredCssWidth;
+        const previousCssHeight = lifeCanvasState.cssHeight || measuredCssHeight;
+        const effectiveCssWidth = Math.abs(measuredCssWidth - previousCssWidth) <= LIFE_CANVAS_CSS_HYSTERESIS_PX
+            ? previousCssWidth
+            : measuredCssWidth;
+        const effectiveCssHeight = Math.abs(measuredCssHeight - previousCssHeight) <= LIFE_CANVAS_CSS_HYSTERESIS_PX
+            ? previousCssHeight
+            : measuredCssHeight;
         const dpr = window.devicePixelRatio || 1;
-        const width = Math.floor(cssWidth * dpr);
-        const height = Math.floor(cssHeight * dpr);
+        const width = Math.max(1, Math.round(effectiveCssWidth * dpr));
+        const height = Math.max(1, Math.round(effectiveCssHeight * dpr));
+
+        if (debugModeActive) {
+            const visualViewport = window.visualViewport;
+            const vvMetrics = visualViewport
+                ? `vv=${visualViewport.width.toFixed(2)}x${visualViewport.height.toFixed(2)} scale=${visualViewport.scale.toFixed(3)} offsetTop=${visualViewport.offsetTop.toFixed(2)}`
+                : 'vv=unavailable';
+            log(`LifeCanvas resize probe ts=${new Date().toISOString()} rect=${rect.width.toFixed(2)}x${rect.height.toFixed(2)} css=${effectiveCssWidth.toFixed(2)}x${effectiveCssHeight.toFixed(2)} inner=${window.innerWidth}x${window.innerHeight} dpr=${dpr.toFixed(3)} px=${width}x${height} ${vvMetrics}`);
+        }
 
         if (!force && lifeCanvasState.width === width && lifeCanvasState.height === height && lifeCanvasState.dpr === dpr) {
             return false;
@@ -730,6 +754,8 @@ document.addEventListener('DOMContentLoaded', () => {
         lifeCanvasState.context = context;
         lifeCanvasState.width = width;
         lifeCanvasState.height = height;
+        lifeCanvasState.cssWidth = effectiveCssWidth;
+        lifeCanvasState.cssHeight = effectiveCssHeight;
         lifeCanvasState.dpr = dpr;
         lifeCanvasState.columns = layout.columns;
         lifeCanvasState.rows = layout.rows;
@@ -771,14 +797,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (typeof ResizeObserver !== 'undefined' && elements.lifeDaysCanvas) {
             lifeCanvasState.resizeObserver = new ResizeObserver(() => {
-                if (debugModeActive) {
-                    const rect = elements.lifeDaysCanvas.getBoundingClientRect();
-                    log(`ResizeObserver: width=${rect.width.toFixed(2)}, height=${rect.height.toFixed(2)}`);
-                }
-                const hasResized = resizeLifeCanvas();
-                if (!hasResized) {
+                const now = Date.now();
+                if (now < lifeCanvasState.resizeGuardUntil) {
+                    if (debugModeActive) {
+                        log(`ResizeObserver guard active; suppressed until ${new Date(lifeCanvasState.resizeGuardUntil).toISOString()}`);
+                    }
                     return;
                 }
+
+                if (debugModeActive) {
+                    const rect = elements.lifeDaysCanvas.getBoundingClientRect();
+                    const visualViewport = window.visualViewport;
+                    const vvMetrics = visualViewport
+                        ? `vv=${visualViewport.width.toFixed(2)}x${visualViewport.height.toFixed(2)} scale=${visualViewport.scale.toFixed(3)} offsetTop=${visualViewport.offsetTop.toFixed(2)}`
+                        : 'vv=unavailable';
+                    log(`ResizeObserver ts=${new Date(now).toISOString()} rect=${rect.width.toFixed(2)}x${rect.height.toFixed(2)} inner=${window.innerWidth}x${window.innerHeight} dpr=${(window.devicePixelRatio || 1).toFixed(3)} ${vvMetrics}`);
+                }
+
+                const hasResized = resizeLifeCanvas();
+                if (!hasResized) {
+                    lifeCanvasState.resizeEvents.push(now);
+                    lifeCanvasState.resizeEvents = lifeCanvasState.resizeEvents.filter((timestamp) => now - timestamp <= LIFE_RESIZE_GUARD_WINDOW_MS);
+                    if (lifeCanvasState.resizeEvents.length >= LIFE_RESIZE_GUARD_MIN_EVENTS) {
+                        lifeCanvasState.resizeGuardUntil = now + LIFE_RESIZE_GUARD_COOLDOWN_MS;
+                        lifeCanvasState.resizeEvents = [];
+                        if (debugModeActive) {
+                            log(`ResizeObserver runaway guard triggered for ${LIFE_RESIZE_GUARD_COOLDOWN_MS}ms`);
+                        }
+                    }
+                    return;
+                }
+
+                lifeCanvasState.resizeEvents = [];
                 const stats = getLifeStats(getCurrentTime());
                 renderLifeDayGrid(stats);
             });

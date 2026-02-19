@@ -17,6 +17,7 @@ html, body {
     display: flex;
     flex-direction: column;
     height: 100vh;
+    height: 100dvh;
     padding: 2vh;
     justify-content: space-between;
     text-align: center;
@@ -136,8 +137,10 @@ body.life-mode .life-unit {
     50% { opacity: 1; }
 }
 
-.time-unit:hover {
-    transform: scale(1.02);
+@media (hover: hover) and (pointer: fine) {
+    .time-unit:hover {
+        transform: scale(1.02);
+    }
 }
 
 h2 {
