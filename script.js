@@ -760,11 +760,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getBestCanvasGridLayout(width, height) {
         const gap = 0;
-        const columns = LIFE_TOTAL_DAYS;
-        const rows = 1;
-        const cellWidth = Math.max(1 / (window.devicePixelRatio || 1), (width - (columns - 1) * gap) / columns);
-        const cellHeight = height;
+        let best = null;
 
+        for (let columns = 1; columns <= width; columns++) {
+            const rows = Math.ceil(LIFE_TOTAL_DAYS / columns);
+            if (rows > height) {
+                continue;
+            }
+            const cellWidth = (width - (columns - 1) * gap) / columns;
+            const cellHeight = (height - (rows - 1) * gap) / rows;
+            if (cellWidth < 1 || cellHeight < 1) {
+                continue;
+            }
+            const minCell = Math.min(cellWidth, cellHeight);
+            if (!best || minCell > Math.min(best.cellWidth, best.cellHeight)) {
+                best = { columns, rows, cellWidth, cellHeight, gap, offsetX: 0, offsetY: 0 };
+            }
+        }
+
+        if (best) {
+            return best;
+        }
+        const columns = Math.min(width, Math.ceil(LIFE_TOTAL_DAYS / height));
+        const rows = Math.ceil(LIFE_TOTAL_DAYS / columns);
+        const cellWidth = (width - (columns - 1) * gap) / columns;
+        const cellHeight = (height - (rows - 1) * gap) / rows;
         return { columns, rows, cellWidth, cellHeight, gap, offsetX: 0, offsetY: 0 };
     }
 
@@ -834,7 +854,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const column = index % columns;
-        const row = 0;
+        const row = Math.floor(index / columns);
         const x = offsetX + column * (cellWidth + gap);
         const y = offsetY + row * (cellHeight + gap);
         context.fillStyle = fillStyle;
@@ -882,9 +902,15 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        const previousCurrentDayIndex = lifeCanvasState.lastCurrentDayIndex;
+        if (typeof previousCurrentDayIndex === 'number' && previousCurrentDayIndex !== currentDayIndex && previousCurrentDayIndex < LIFE_TOTAL_DAYS) {
+            drawLifeDay(previousCurrentDayIndex, getColorForDay(previousCurrentDayIndex, livedDays, currentDayIndex, null));
+        }
+
         const currentDayAlpha = getCurrentDayAlpha();
         drawLifeDay(currentDayIndex, getColorForDay(currentDayIndex, livedDays, currentDayIndex, currentDayAlpha));
         lifeCanvasState.lastCurrentDayAlpha = currentDayAlpha;
+        lifeCanvasState.lastCurrentDayIndex = currentDayIndex;
     }
 
     function stopLifeAnimationLoop() {
