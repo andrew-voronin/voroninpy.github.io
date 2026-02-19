@@ -781,7 +781,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (best) {
             return best;
         }
-        const columns = Math.min(width, Math.ceil(LIFE_TOTAL_DAYS / height));
+        const minColumns = 20;
+        const columns = Math.max(minColumns, Math.min(width, Math.ceil(LIFE_TOTAL_DAYS / height)));
         const rows = Math.ceil(LIFE_TOTAL_DAYS / columns);
         const cellWidth = (width - (columns - 1) * gap) / columns;
         const cellHeight = (height - (rows - 1) * gap) / rows;
@@ -795,14 +796,28 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const rect = canvas.getBoundingClientRect();
-        const measuredCssWidth = Math.max(1, rect.width);
-        const measuredCssHeight = Math.max(1, rect.height);
+        let measuredCssWidth = Math.max(1, rect.width);
+        let measuredCssHeight = Math.max(1, rect.height);
+
+        if (measuredCssWidth < 50 || measuredCssHeight < 50) {
+            const vv = window.visualViewport;
+            const fallbackWidth = (canvas.offsetWidth > 0 ? canvas.offsetWidth : (vv ? vv.width : window.innerWidth));
+            const fallbackHeight = (canvas.offsetHeight > 0 ? canvas.offsetHeight : (vv ? vv.height : window.innerHeight));
+            if (measuredCssWidth < 50 && fallbackWidth > 0) {
+                measuredCssWidth = fallbackWidth;
+            }
+            if (measuredCssHeight < 50 && fallbackHeight > 0) {
+                measuredCssHeight = fallbackHeight;
+            }
+        }
+
         const previousCssWidth = lifeCanvasState.cssWidth || measuredCssWidth;
         const previousCssHeight = lifeCanvasState.cssHeight || measuredCssHeight;
-        const effectiveCssWidth = Math.abs(measuredCssWidth - previousCssWidth) <= LIFE_CANVAS_CSS_HYSTERESIS_PX
+        const trustPrevious = (w, h) => w >= 50 && h >= 50;
+        const effectiveCssWidth = trustPrevious(previousCssWidth, previousCssHeight) && Math.abs(measuredCssWidth - previousCssWidth) <= LIFE_CANVAS_CSS_HYSTERESIS_PX
             ? previousCssWidth
             : measuredCssWidth;
-        const effectiveCssHeight = Math.abs(measuredCssHeight - previousCssHeight) <= LIFE_CANVAS_CSS_HYSTERESIS_PX
+        const effectiveCssHeight = trustPrevious(previousCssWidth, previousCssHeight) && Math.abs(measuredCssHeight - previousCssHeight) <= LIFE_CANVAS_CSS_HYSTERESIS_PX
             ? previousCssHeight
             : measuredCssHeight;
         const dpr = window.devicePixelRatio || 1;
@@ -1091,6 +1106,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         startLifeAnimationLoop();
+
+        requestAnimationFrame(() => {
+            if (currentModeIndex !== LIFE_MODE_INDEX) return;
+            const resized = resizeLifeCanvas(true);
+            if (resized) {
+                renderLifeDayGrid(getLifeStats(getCurrentTime()));
+            }
+        });
+        setTimeout(() => {
+            if (currentModeIndex !== LIFE_MODE_INDEX) return;
+            const resized = resizeLifeCanvas(true);
+            if (resized) {
+                renderLifeDayGrid(getLifeStats(getCurrentTime()));
+            }
+        }, 400);
     }
 
     function startLifeHold() {
