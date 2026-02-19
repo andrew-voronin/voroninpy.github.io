@@ -705,7 +705,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function resizeLifeCanvas(force = false) {
         const canvas = elements.lifeDaysCanvas;
         if (!canvas) {
-            return;
+            return false;
         }
 
         const rect = canvas.getBoundingClientRect();
@@ -716,7 +716,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const height = Math.floor(cssHeight * dpr);
 
         if (!force && lifeCanvasState.width === width && lifeCanvasState.height === height && lifeCanvasState.dpr === dpr) {
-            return;
+            return false;
         }
 
         canvas.width = width;
@@ -739,6 +739,7 @@ document.addEventListener('DOMContentLoaded', () => {
         lifeCanvasState.offsetY = layout.offsetY;
 
         resetLifeCanvasRenderCache();
+        return true;
     }
 
     function drawLifeDay(index, fillStyle) {
@@ -770,7 +771,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (typeof ResizeObserver !== 'undefined' && elements.lifeDaysCanvas) {
             lifeCanvasState.resizeObserver = new ResizeObserver(() => {
-                resizeLifeCanvas(true);
+                const hasResized = resizeLifeCanvas();
+                if (!hasResized) {
+                    return;
+                }
                 const stats = getLifeStats(getCurrentTime());
                 renderLifeDayGrid(stats);
             });
