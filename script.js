@@ -716,8 +716,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderLifeDayGrid(now, lifeStats) {
         const { livedDays, currentDayIndex } = lifeStats;
+        const currentCell = lifeDayCells[currentDayIndex];
+        const currentCellSize = currentCell
+            ? `${currentCell.clientWidth}x${currentCell.clientHeight}`
+            : 'none';
 
-        const renderState = `${livedDays}-${currentDayIndex}-${now.getHours()}`;
+        const renderState = `${livedDays}-${currentDayIndex}-${now.getHours()}-${currentCellSize}`;
         if (lastLifeRenderState === renderState) {
             return;
         }
@@ -733,7 +737,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (livedDays < LIFE_TOTAL_DAYS) {
-            const currentCell = lifeDayCells[currentDayIndex];
             if (currentCell) {
                 renderCurrentDayCell(currentCell, now.getHours());
             }
