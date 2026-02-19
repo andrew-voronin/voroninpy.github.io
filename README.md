@@ -30,7 +30,7 @@ Time-window settings for Active and Work are in `config.js`. Life settings (DOB,
 1. Open [https://andrew-voronin.github.io/voroninpy.github.io/](https://andrew-voronin.github.io/voroninpy.github.io/)
 2. For best experience, use on an iPad in portrait mode
 3. Click anywhere to cycle between Absolute → Active → Work → Life
-4. In Life mode, use **Set date of birth** (or long-press the Life progress area) to open the config modal: set DOB, expected lifespan (50–120 years), and life phase age boundaries
+4. In Life mode, use **Set date of birth** (or long-press the Life progress area) to open the config modal: set DOB, expected lifespan (50–200 years), and life phase age boundaries
 5. Optional: add `?mode=absolute|active|work|life` to the URL to start in a specific mode
 
 ## Development Mode

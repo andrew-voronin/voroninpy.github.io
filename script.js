@@ -116,6 +116,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const LIFE_DOB_STORAGE_KEY = 'timeProgressDob';
     const LIFE_CONFIG_STORAGE_KEY = 'timeProgressLifeConfig';
     const DEFAULT_LIFE_EXPECTANCY_YEARS = 80;
+    const LIFE_EXPECTANCY_YEARS_MIN = 50;
+    const LIFE_EXPECTANCY_YEARS_MAX = 200;
     const DEFAULT_LIFE_STAGE_BOUNDARIES = [1, 3, 8, 12, 18, 40, 60];
 
     const LIFE_STAGE_META = [
@@ -140,9 +142,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (raw) {
                 const parsed = JSON.parse(raw);
                 if (typeof parsed.expectancyYears === 'number' && Array.isArray(parsed.stageBoundaries) && parsed.stageBoundaries.length === 7) {
-                    lifeConfig.expectancyYears = Math.max(50, Math.min(120, parsed.expectancyYears));
+                    lifeConfig.expectancyYears = Math.max(LIFE_EXPECTANCY_YEARS_MIN, Math.min(LIFE_EXPECTANCY_YEARS_MAX, parsed.expectancyYears));
                     const exp = lifeConfig.expectancyYears;
-                    lifeConfig.stageBoundaries = parsed.stageBoundaries.map((y) => Math.max(0, Math.min(120, Number(y))));
+                    lifeConfig.stageBoundaries = parsed.stageBoundaries.map((y) => Math.max(0, Math.min(LIFE_EXPECTANCY_YEARS_MAX, Number(y))));
                     lifeConfig.stageBoundaries[0] = Math.max(1, lifeConfig.stageBoundaries[0]);
                     for (let i = 1; i < 7; i++) {
                         if (lifeConfig.stageBoundaries[i] <= lifeConfig.stageBoundaries[i - 1]) {
@@ -224,7 +226,8 @@ document.addEventListener('DOMContentLoaded', () => {
         lastCurrentDayIndex: null,
         lastCurrentDayAlpha: null,
         animationFrame: null,
-        animationInterval: null
+        animationInterval: null,
+        layoutTotalDays: 0
     };
 
 
@@ -734,7 +737,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const input = document.createElement('input');
                 input.type = 'number';
                 input.min = Math.max(1, startAge + 1);
-                input.max = Math.min(119, lifespan - 1);
+                input.max = Math.min(LIFE_EXPECTANCY_YEARS_MAX - 1, lifespan - 1);
                 input.value = endAge;
                 input.setAttribute('aria-label', meta.name + ' end age');
                 input.dataset.phaseIndex = String(index);
@@ -762,11 +765,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function readLifeConfigFromModal() {
-        const expectancy = Math.max(50, Math.min(120, Number(elements.lifeExpectancyYears?.value) || DEFAULT_LIFE_EXPECTANCY_YEARS));
+        const expectancy = Math.max(LIFE_EXPECTANCY_YEARS_MIN, Math.min(LIFE_EXPECTANCY_YEARS_MAX, Number(elements.lifeExpectancyYears?.value) || DEFAULT_LIFE_EXPECTANCY_YEARS));
         const boundaries = [];
         for (let i = 0; i < 7; i++) {
             const input = elements.lifePhaseRows?.querySelector('input[data-phase-index="' + i + '"]');
-            const val = input ? Math.max(0, Math.min(120, Number(input.value) || 0)) : getLifeStageBoundaries()[i];
+            const val = input ? Math.max(0, Math.min(LIFE_EXPECTANCY_YEARS_MAX, Number(input.value) || 0)) : getLifeStageBoundaries()[i];
             boundaries.push(val);
         }
         boundaries[0] = Math.max(1, boundaries[0]);
@@ -1017,6 +1020,7 @@ document.addEventListener('DOMContentLoaded', () => {
         lifeCanvasState.gap = layout.gap;
         lifeCanvasState.offsetX = layout.offsetX;
         lifeCanvasState.offsetY = layout.offsetY;
+        lifeCanvasState.layoutTotalDays = getLifeTotalDays();
 
         resetLifeCanvasRenderCache();
         return true;
@@ -1270,6 +1274,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderLifeDayGrid(lifeStats) {
         const { livedDays, currentDayIndex } = lifeStats;
+        if (lifeCanvasState.layoutTotalDays !== getLifeTotalDays()) {
+            resetLifeCanvasRenderCache();
+            resizeLifeCanvas(true);
+        }
         if (!lifeCanvasState.context) {
             resizeLifeCanvas(true);
         }
