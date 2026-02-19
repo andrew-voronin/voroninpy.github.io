@@ -47,6 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
             progress: document.getElementById('life-progress'),
             percentage: document.getElementById('life-percentage')
         },
+        lifeDaysGrid: document.getElementById('life-days-grid'),
         quote: document.getElementById('time-quote'),
         modeOverlay: document.getElementById('mode-overlay'),
         devControls: document.getElementById('dev-controls'),
@@ -58,7 +59,11 @@ document.addEventListener('DOMContentLoaded', () => {
         dobControls: document.getElementById('dob-controls'),
         dobMonth: document.getElementById('dob-month'),
         dobDay: document.getElementById('dob-day'),
-        dobYear: document.getElementById('dob-year')
+        dobYear: document.getElementById('dob-year'),
+        dobModal: document.getElementById('dob-modal'),
+        dobConfirm: document.getElementById('dob-confirm'),
+        nonLifeUnits: document.querySelectorAll('.container > .time-unit:not(.life-unit)'),
+        quoteWrap: document.querySelector('.quote')
     };
 
     // Development mode variables
@@ -103,7 +108,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentModeIndex = 0;
     const LIFE_MODE_INDEX = 3;
     const LIFE_EXPECTANCY_YEARS = 80;
+    const LIFE_TOTAL_DAYS = 29220;
     const LIFE_DOB_STORAGE_KEY = 'timeProgressDob';
+    const LIFE_HOLD_DURATION_MS = 3000;
+
+    let lifeDayCells = [];
+    let lifeHoldTimer = null;
+    let lifeHoldTriggered = false;
+    let lifeHoldCompletedAt = 0;
+    let lastLifeRenderState = null;
 
 
     // Simple console logger
@@ -569,6 +582,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!month || !day || !year) {
             localStorage.removeItem(LIFE_DOB_STORAGE_KEY);
+            lastLifeRenderState = null;
             return;
         }
 
@@ -577,6 +591,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!isValidDate || dob > new Date()) {
             localStorage.removeItem(LIFE_DOB_STORAGE_KEY);
+            lastLifeRenderState = null;
             return;
         }
 
@@ -585,6 +600,7 @@ document.addEventListener('DOMContentLoaded', () => {
             month: Number(month),
             day: Number(day)
         }));
+        lastLifeRenderState = null;
     }
 
     function setupDobControls() {
@@ -629,6 +645,99 @@ document.addEventListener('DOMContentLoaded', () => {
             saveDobIfComplete();
             updateTime();
         });
+
+        elements.dobConfirm.addEventListener('click', () => {
+            saveDobIfComplete();
+            closeDobModal();
+            updateTime();
+        });
+    }
+
+    function createLifeDayGrid() {
+        const fragment = document.createDocumentFragment();
+        for (let index = 0; index < LIFE_TOTAL_DAYS; index++) {
+            const cell = document.createElement('div');
+            cell.className = 'life-day';
+            cell.dataset.dayIndex = String(index);
+            fragment.appendChild(cell);
+            lifeDayCells.push(cell);
+        }
+        elements.lifeDaysGrid.appendChild(fragment);
+    }
+
+    function openDobModal() {
+        elements.dobModal.classList.remove('hidden');
+        lifeHoldCompletedAt = Date.now();
+    }
+
+    function closeDobModal() {
+        elements.dobModal.classList.add('hidden');
+    }
+
+    function getLifeStats(now) {
+        const dob = getDobFromSelection();
+        if (!dob) {
+            return { progress: 0, livedDays: 0, currentDayIndex: 0 };
+        }
+
+        const endOfLife = new Date(dob);
+        endOfLife.setFullYear(endOfLife.getFullYear() + LIFE_EXPECTANCY_YEARS);
+
+        let progress = 0;
+        if (now > dob) {
+            progress = (now - dob) / (endOfLife - dob);
+        }
+        progress = Math.max(0, Math.min(1, progress));
+
+        const livedDays = Math.floor(progress * LIFE_TOTAL_DAYS);
+        const currentDayIndex = Math.min(LIFE_TOTAL_DAYS - 1, livedDays);
+        return { progress, livedDays, currentDayIndex };
+    }
+
+    function renderCurrentDayCell(cell, hoursNow) {
+        cell.classList.add('current');
+        const canShowHourPixels = cell.clientWidth >= 16 && cell.clientHeight >= 16;
+        if (!canShowHourPixels) {
+            return;
+        }
+
+        cell.classList.add('detail');
+        cell.innerHTML = '';
+        const activeHours = Math.max(1, Math.min(24, hoursNow + 1));
+        for (let hour = 0; hour < 24; hour++) {
+            const hourPixel = document.createElement('span');
+            hourPixel.className = 'hour-pixel';
+            if (hour < activeHours) {
+                hourPixel.classList.add('active');
+            }
+            cell.appendChild(hourPixel);
+        }
+    }
+
+    function renderLifeDayGrid(now, lifeStats) {
+        const { livedDays, currentDayIndex } = lifeStats;
+
+        const renderState = `${livedDays}-${currentDayIndex}-${now.getHours()}`;
+        if (lastLifeRenderState === renderState) {
+            return;
+        }
+        lastLifeRenderState = renderState;
+
+        for (let index = 0; index < lifeDayCells.length; index++) {
+            const cell = lifeDayCells[index];
+            cell.className = 'life-day';
+            cell.innerHTML = '';
+            if (index < livedDays) {
+                cell.classList.add('lived');
+            }
+        }
+
+        if (livedDays < LIFE_TOTAL_DAYS) {
+            const currentCell = lifeDayCells[currentDayIndex];
+            if (currentCell) {
+                renderCurrentDayCell(currentCell, now.getHours());
+            }
+        }
     }
 
     function getDobFromSelection() {
@@ -650,43 +759,67 @@ document.addEventListener('DOMContentLoaded', () => {
         return dob;
     }
 
-    function calculateLifeProgress(now) {
-        const dob = getDobFromSelection();
-        if (!dob) {
-            return 0;
-        }
-
-        const endOfLife = new Date(dob);
-        endOfLife.setFullYear(endOfLife.getFullYear() + LIFE_EXPECTANCY_YEARS);
-
-        if (now <= dob) {
-            return 0;
-        }
-
-        if (now >= endOfLife) {
-            return 1;
-        }
-
-        return (now - dob) / (endOfLife - dob);
-    }
-
     function applyLifeModeState() {
         const isLifeMode = currentModeIndex === LIFE_MODE_INDEX;
         document.body.classList.toggle('life-mode', isLifeMode);
         elements.life.unit.classList.toggle('hidden', !isLifeMode);
+        elements.nonLifeUnits.forEach(unit => unit.classList.toggle('hidden', isLifeMode));
+        if (elements.quoteWrap) {
+            elements.quoteWrap.classList.toggle('hidden', isLifeMode);
+        }
+        if (!isLifeMode) {
+            closeDobModal();
+        }
+    }
 
-        const hasDob = !!getDobFromSelection();
-        elements.dobControls.classList.toggle('hidden', !isLifeMode || hasDob);
+    function startLifeHold() {
+        if (currentModeIndex !== LIFE_MODE_INDEX) {
+            return;
+        }
+        lifeHoldTriggered = false;
+        clearTimeout(lifeHoldTimer);
+        lifeHoldTimer = setTimeout(() => {
+            lifeHoldTriggered = true;
+            openDobModal();
+        }, LIFE_HOLD_DURATION_MS);
+    }
+
+    function stopLifeHold() {
+        clearTimeout(lifeHoldTimer);
+    }
+
+    function cancelLifeHoldAndFlag(event) {
+        stopLifeHold();
+        if (lifeHoldTriggered && event) {
+            lifeHoldCompletedAt = Date.now();
+            event.preventDefault();
+            event.stopPropagation();
+        }
     }
 
     // Click anywhere to cycle modes
     document.addEventListener('click', (event) => {
+        const holdCooldownActive = Date.now() - lifeHoldCompletedAt < 1200;
         // Don't cycle mode if clicking on dev controls
         if ((elements.devControls && elements.devControls.contains(event.target)) ||
-            (elements.dobControls && elements.dobControls.contains(event.target))) {
+            (elements.dobModal && elements.dobModal.contains(event.target)) ||
+            holdCooldownActive ||
+            (currentModeIndex === LIFE_MODE_INDEX && elements.life.value.contains(event.target) && lifeHoldTriggered)) {
             return;
         }
         cycleMode();
+    });
+
+    elements.life.value.addEventListener('pointerdown', startLifeHold);
+    elements.life.value.addEventListener('pointerup', cancelLifeHoldAndFlag);
+    elements.life.value.addEventListener('pointerleave', stopLifeHold);
+    elements.life.value.addEventListener('pointercancel', stopLifeHold);
+    elements.life.value.addEventListener('touchstart', startLifeHold, { passive: true });
+    elements.life.value.addEventListener('touchend', cancelLifeHoldAndFlag);
+    elements.life.value.addEventListener('mousedown', startLifeHold);
+    elements.life.value.addEventListener('mouseup', cancelLifeHoldAndFlag);
+    elements.life.value.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
     });
 
     // Change quote periodically
@@ -758,9 +891,9 @@ document.addEventListener('DOMContentLoaded', () => {
         updateElement(elements.hour, `${hours}:${minutes.toString().padStart(2, '0')}`, hourProgress);
 
         if (currentModeIndex === LIFE_MODE_INDEX) {
-            const lifeProgress = calculateLifeProgress(now);
-            updateElement(elements.life, 'Life', lifeProgress);
-            elements.dobControls.classList.toggle('hidden', !!getDobFromSelection());
+            const lifeStats = getLifeStats(now);
+            updateElement(elements.life, 'Life', lifeStats.progress);
+            renderLifeDayGrid(now, lifeStats);
         }
 
         // Pulse effect on active progress bars
@@ -809,6 +942,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     setupDobControls();
+    createLifeDayGrid();
     applyLifeModeState();
 
     // Initialize and update every 100ms for smooth animations

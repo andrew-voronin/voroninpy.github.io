@@ -14,10 +14,17 @@
                 <div id="life-progress" class="progress-bar"></div>
             </div>
             <p id="life-percentage">0.00000000%</p>
-            <div id="dob-controls" class="dob-controls hidden">
-                <select id="dob-month" aria-label="Birth month"></select>
-                <select id="dob-day" aria-label="Birth day"></select>
-                <select id="dob-year" aria-label="Birth year"></select>
+            <div id="life-days-grid" class="life-days-grid" aria-label="Life day squares"></div>
+            <div id="dob-modal" class="dob-modal hidden" role="dialog" aria-modal="true" aria-labelledby="dob-modal-title">
+                <div class="dob-modal-content">
+                    <h4 id="dob-modal-title">Set date of birth</h4>
+                    <div id="dob-controls" class="dob-controls">
+                        <select id="dob-year" aria-label="Birth year"></select>
+                        <select id="dob-month" aria-label="Birth month"></select>
+                        <select id="dob-day" aria-label="Birth day"></select>
+                    </div>
+                    <button id="dob-confirm" class="dob-confirm">Confirm</button>
+                </div>
             </div>
         </div>
 

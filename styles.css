@@ -43,6 +43,46 @@ html, body {
     justify-content: center;
 }
 
+.dob-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1200;
+}
+
+.dob-modal.hidden {
+    display: none;
+}
+
+.dob-modal-content {
+    background: #10131b;
+    border: 1px solid #4a9fff;
+    border-radius: 12px;
+    padding: 1rem;
+    width: min(90vw, 560px);
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+}
+
+.dob-modal-content h4 {
+    color: #00f6ff;
+    font-size: min(3.6vw, 2.4vh);
+}
+
+.dob-confirm {
+    background: linear-gradient(90deg, #4a9fff, #00f6ff);
+    border: 0;
+    color: #000;
+    font-weight: 600;
+    border-radius: 8px;
+    padding: 0.5rem 0.8rem;
+    font-size: min(2.8vw, 2vh);
+}
+
 .dob-controls select {
     background-color: #333;
     border: 1px solid #4a9fff;
@@ -62,6 +102,71 @@ body.life-mode p {
 
 body.life-mode .progress-container {
     height: min(1.6vh, 1.6vw);
+}
+
+body.life-mode .container {
+    justify-content: flex-start;
+    gap: 1.5vh;
+}
+
+body.life-mode .container > .time-unit:not(.life-unit),
+body.life-mode .quote {
+    display: none;
+}
+
+body.life-mode .life-unit {
+    justify-content: flex-start;
+    margin-bottom: 0;
+    gap: 0.8vh;
+}
+
+.life-days-grid {
+    display: grid;
+    grid-template-columns: repeat(180, minmax(0, 1fr));
+    gap: 1px;
+    width: 100%;
+    height: min(62vh, 62vw);
+    margin-top: 0.8vh;
+}
+
+.life-day {
+    background: rgba(255, 255, 255, 0.14);
+    border-radius: 1px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.life-day.lived {
+    background: rgba(74, 159, 255, 0.85);
+}
+
+.life-day.current {
+    background: rgba(0, 246, 255, 0.95);
+    box-shadow: 0 0 6px rgba(0, 246, 255, 0.95);
+    animation: currentDayBlink 1.4s infinite ease-in-out;
+}
+
+.life-day.current.detail {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    grid-template-rows: repeat(4, 1fr);
+    gap: 1px;
+    padding: 1px;
+}
+
+.hour-pixel {
+    opacity: 0.15;
+    border-radius: 1px;
+    background: #00f6ff;
+}
+
+.hour-pixel.active {
+    opacity: 1;
+    animation: currentDayBlink 1.2s infinite ease-in-out;
+}
+
+@keyframes currentDayBlink {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
 }
 
 .time-unit:hover {
