@@ -119,6 +119,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const LIFE_RESIZE_GUARD_COOLDOWN_MS = 1200;
     const LIFE_RESIZE_STORM_WINDOW_MS = 1500;
     const LIFE_RESIZE_STORM_MIN_EVENTS = 6;
+    const LIFE_STAGE_PALETTE = [
+        { active: '#7eb8da', inactive: 'rgba(126, 184, 218, 0.25)' },
+        { active: '#6bcb9c', inactive: 'rgba(107, 203, 156, 0.25)' },
+        { active: '#5dd4c4', inactive: 'rgba(93, 212, 196, 0.25)' },
+        { active: '#e8d46a', inactive: 'rgba(232, 212, 106, 0.25)' },
+        { active: '#e89a5a', inactive: 'rgba(232, 154, 90, 0.25)' },
+        { active: '#e86a6a', inactive: 'rgba(232, 106, 106, 0.25)' },
+        { active: '#b87ee0', inactive: 'rgba(184, 126, 224, 0.25)' },
+        { active: '#8a9bb0', inactive: 'rgba(138, 155, 176, 0.25)' }
+    ];
+    const LIFE_STAGE_BOUNDARIES_YEARS = [1, 3, 8, 12, 18, 40, 60];
 
     let lifeHoldTimer = null;
     let lifeHoldTriggered = false;
@@ -130,7 +141,8 @@ document.addEventListener('DOMContentLoaded', () => {
         height: 0,
         columns: 0,
         rows: 0,
-        cellSize: 0,
+        cellWidth: 0,
+        cellHeight: 0,
         gap: 0,
         offsetX: 0,
         offsetY: 0,
@@ -145,7 +157,8 @@ document.addEventListener('DOMContentLoaded', () => {
         resizeDeferredTimer: null,
         lastLivedDays: null,
         lastCurrentDayIndex: null,
-        lastCurrentDayAlpha: null
+        lastCurrentDayAlpha: null,
+        animationFrame: null
     };
 
 
@@ -688,6 +701,11 @@ document.addEventListener('DOMContentLoaded', () => {
         lifeCanvasState.lastCurrentDayAlpha = null;
     }
 
+    function getCurrentDayAlpha() {
+        const blinkPhase = 0.5 + 0.5 * Math.sin(Date.now() / 300);
+        return Number((0.4 + blinkPhase * 0.6).toFixed(3));
+    }
+
     function triggerLifeResizeGuard(now, reason) {
         lifeCanvasState.resizeGuardUntil = now + LIFE_RESIZE_GUARD_COOLDOWN_MS;
         lifeCanvasState.resizeEvents = [];
@@ -741,34 +759,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getBestCanvasGridLayout(width, height) {
-        let best = { columns: 1, rows: LIFE_TOTAL_DAYS, cellSize: 1, gap: 1, offsetX: 0, offsetY: 0 };
+        const gap = 0;
+        const columns = LIFE_TOTAL_DAYS;
+        const rows = 1;
+        const cellWidth = Math.max(1 / (window.devicePixelRatio || 1), (width - (columns - 1) * gap) / columns);
+        const cellHeight = height;
 
-        for (let columns = 60; columns <= 400; columns++) {
-            const rows = Math.ceil(LIFE_TOTAL_DAYS / columns);
-            if (rows <= 0) {
-                continue;
-            }
-
-            const gap = Math.max(0.5, Math.min(1.5, Math.floor(Math.min(width, height) / 240)));
-            const cellWidth = (width - (columns - 1) * gap) / columns;
-            const cellHeight = (height - (rows - 1) * gap) / rows;
-            const cellSize = Math.floor(Math.min(cellWidth, cellHeight));
-
-            if (cellSize < 1) {
-                continue;
-            }
-
-            const usedWidth = columns * cellSize + (columns - 1) * gap;
-            const usedHeight = rows * cellSize + (rows - 1) * gap;
-            const offsetX = Math.floor((width - usedWidth) / 2);
-            const offsetY = Math.floor((height - usedHeight) / 2);
-
-            if (cellSize > best.cellSize || (cellSize === best.cellSize && usedHeight > (best.rows * best.cellSize))) {
-                best = { columns, rows, cellSize, gap, offsetX, offsetY };
-            }
-        }
-
-        return best;
+        return { columns, rows, cellWidth, cellHeight, gap, offsetX: 0, offsetY: 0 };
     }
 
     function resizeLifeCanvas(force = false) {
@@ -820,7 +817,8 @@ document.addEventListener('DOMContentLoaded', () => {
         lifeCanvasState.dpr = dpr;
         lifeCanvasState.columns = layout.columns;
         lifeCanvasState.rows = layout.rows;
-        lifeCanvasState.cellSize = layout.cellSize;
+        lifeCanvasState.cellWidth = layout.cellWidth;
+        lifeCanvasState.cellHeight = layout.cellHeight;
         lifeCanvasState.gap = layout.gap;
         lifeCanvasState.offsetX = layout.offsetX;
         lifeCanvasState.offsetY = layout.offsetY;
@@ -830,17 +828,88 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function drawLifeDay(index, fillStyle) {
-        const { context, columns, cellSize, gap, offsetX, offsetY } = lifeCanvasState;
+        const { context, columns, cellWidth, cellHeight, gap, offsetX, offsetY } = lifeCanvasState;
         if (!context) {
             return;
         }
 
         const column = index % columns;
-        const row = Math.floor(index / columns);
-        const x = Math.floor(offsetX + column * (cellSize + gap));
-        const y = Math.floor(offsetY + row * (cellSize + gap));
+        const row = 0;
+        const x = offsetX + column * (cellWidth + gap);
+        const y = offsetY + row * (cellHeight + gap);
         context.fillStyle = fillStyle;
-        context.fillRect(x, y, cellSize, cellSize);
+        context.fillRect(x, y, cellWidth, cellHeight);
+    }
+
+    function getStageForDayIndex(index) {
+        const ageInYears = index / 365.25;
+        for (let stageIndex = 0; stageIndex < LIFE_STAGE_BOUNDARIES_YEARS.length; stageIndex++) {
+            if (ageInYears < LIFE_STAGE_BOUNDARIES_YEARS[stageIndex]) {
+                return stageIndex;
+            }
+        }
+        return LIFE_STAGE_PALETTE.length - 1;
+    }
+
+    function getColorForDay(index, livedDays, currentDayIndex, currentDayAlpha = null) {
+        const stageIndex = getStageForDayIndex(index);
+        const stageColors = LIFE_STAGE_PALETTE[stageIndex];
+
+        if (index === currentDayIndex && index < LIFE_TOTAL_DAYS && currentDayAlpha !== null) {
+            const rgb = hexToRgb(stageColors.active);
+            return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${currentDayAlpha})`;
+        }
+
+        return index < livedDays ? stageColors.active : stageColors.inactive;
+    }
+
+    function hexToRgb(hexColor) {
+        const normalized = hexColor.replace('#', '');
+        const value = normalized.length === 3
+            ? normalized.split('').map((char) => `${char}${char}`).join('')
+            : normalized;
+
+        return {
+            r: Number.parseInt(value.slice(0, 2), 16),
+            g: Number.parseInt(value.slice(2, 4), 16),
+            b: Number.parseInt(value.slice(4, 6), 16)
+        };
+    }
+
+    function redrawCurrentLifeDay(lifeStats) {
+        const { livedDays, currentDayIndex } = lifeStats;
+        if (livedDays >= LIFE_TOTAL_DAYS) {
+            return;
+        }
+
+        const currentDayAlpha = getCurrentDayAlpha();
+        drawLifeDay(currentDayIndex, getColorForDay(currentDayIndex, livedDays, currentDayIndex, currentDayAlpha));
+        lifeCanvasState.lastCurrentDayAlpha = currentDayAlpha;
+    }
+
+    function stopLifeAnimationLoop() {
+        if (lifeCanvasState.animationFrame) {
+            cancelAnimationFrame(lifeCanvasState.animationFrame);
+            lifeCanvasState.animationFrame = null;
+        }
+    }
+
+    function startLifeAnimationLoop() {
+        if (lifeCanvasState.animationFrame) {
+            return;
+        }
+
+        const animate = () => {
+            if (currentModeIndex !== LIFE_MODE_INDEX || !lifeCanvasState.context) {
+                lifeCanvasState.animationFrame = null;
+                return;
+            }
+
+            redrawCurrentLifeDay(getLifeStats(getCurrentTime()));
+            lifeCanvasState.animationFrame = requestAnimationFrame(animate);
+        };
+
+        lifeCanvasState.animationFrame = requestAnimationFrame(animate);
     }
 
     function clearLifeCanvas() {
@@ -916,8 +985,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const blinkPhase = 0.5 + 0.5 * Math.sin(Date.now() / 360);
-        const currentDayAlpha = Number((0.45 + blinkPhase * 0.5).toFixed(3));
+        const currentDayAlpha = getCurrentDayAlpha();
 
         if (lifeCanvasState.lastLivedDays === livedDays
             && lifeCanvasState.lastCurrentDayIndex === currentDayIndex
@@ -925,35 +993,31 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const livedColor = 'rgba(74, 159, 255, 0.88)';
-        const emptyColor = 'rgba(255, 255, 255, 0.14)';
-        const currentColor = `rgba(0, 246, 255, ${currentDayAlpha})`;
-
         if (lifeCanvasState.lastLivedDays === null) {
             clearLifeCanvas();
             for (let index = 0; index < LIFE_TOTAL_DAYS; index++) {
-                drawLifeDay(index, index < livedDays ? livedColor : emptyColor);
+                drawLifeDay(index, getColorForDay(index, livedDays, currentDayIndex));
             }
         } else if (lifeCanvasState.lastLivedDays !== livedDays) {
             const previousLivedDays = lifeCanvasState.lastLivedDays;
             if (previousLivedDays < livedDays) {
                 for (let index = previousLivedDays; index < livedDays; index++) {
-                    drawLifeDay(index, livedColor);
+                    drawLifeDay(index, getColorForDay(index, livedDays, currentDayIndex));
                 }
             } else {
                 for (let index = livedDays; index < previousLivedDays; index++) {
-                    drawLifeDay(index, emptyColor);
+                    drawLifeDay(index, getColorForDay(index, livedDays, currentDayIndex));
                 }
             }
         }
 
         const previousCurrentDayIndex = lifeCanvasState.lastCurrentDayIndex;
         if (typeof previousCurrentDayIndex === 'number' && previousCurrentDayIndex < LIFE_TOTAL_DAYS) {
-            drawLifeDay(previousCurrentDayIndex, previousCurrentDayIndex < livedDays ? livedColor : emptyColor);
+            drawLifeDay(previousCurrentDayIndex, getColorForDay(previousCurrentDayIndex, livedDays, currentDayIndex));
         }
 
         if (livedDays < LIFE_TOTAL_DAYS) {
-            drawLifeDay(currentDayIndex, currentColor);
+            drawLifeDay(currentDayIndex, getColorForDay(currentDayIndex, livedDays, currentDayIndex, currentDayAlpha));
         }
 
         lifeCanvasState.lastLivedDays = livedDays;
@@ -996,7 +1060,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (!isLifeMode) {
             closeDobModal();
+            stopLifeAnimationLoop();
+            return;
         }
+
+        startLifeAnimationLoop();
     }
 
     function startLifeHold() {
