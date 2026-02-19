@@ -21,12 +21,27 @@
             <div id="life-footer" class="life-footer" aria-hidden="true"></div>
             <div id="dob-modal" class="dob-modal hidden" role="dialog" aria-modal="true" aria-labelledby="dob-modal-title">
                 <div class="dob-modal-content">
-                    <h4 id="dob-modal-title">Set date of birth</h4>
-                    <div id="dob-controls" class="dob-controls">
-                        <select id="dob-year" aria-label="Birth year"></select>
-                        <select id="dob-month" aria-label="Birth month"></select>
-                        <select id="dob-day" aria-label="Birth day"></select>
-                    </div>
+                    <h4 id="dob-modal-title">Life configuration</h4>
+                    <section class="life-config-section">
+                        <h5 class="life-config-heading">Date of birth</h5>
+                        <div id="dob-controls" class="dob-controls">
+                            <select id="dob-year" aria-label="Birth year"></select>
+                            <select id="dob-month" aria-label="Birth month"></select>
+                            <select id="dob-day" aria-label="Birth day"></select>
+                        </div>
+                    </section>
+                    <section class="life-config-section">
+                        <h5 class="life-config-heading">Expected lifespan</h5>
+                        <div class="life-config-lifespan">
+                            <label for="life-expectancy-years">Total years</label>
+                            <input type="number" id="life-expectancy-years" min="50" max="120" value="80" aria-label="Expected lifespan in years">
+                        </div>
+                    </section>
+                    <section class="life-config-section life-config-phases">
+                        <h5 class="life-config-heading">Life phases</h5>
+                        <p class="life-config-phases-intro">Age ranges (years) and short descriptions. Adjust end age for each phase.</p>
+                        <div id="life-phase-rows" class="life-phase-rows"></div>
+                    </section>
                     <button id="dob-confirm" class="dob-confirm">Confirm</button>
                 </div>
             </div>

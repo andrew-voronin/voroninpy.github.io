@@ -65,6 +65,8 @@ document.addEventListener('DOMContentLoaded', () => {
         dobYear: document.getElementById('dob-year'),
         dobModal: document.getElementById('dob-modal'),
         dobConfirm: document.getElementById('dob-confirm'),
+        lifeExpectancyYears: document.getElementById('life-expectancy-years'),
+        lifePhaseRows: document.getElementById('life-phase-rows'),
         nonLifeUnits: document.querySelectorAll('.container > .time-unit:not(.life-unit)'),
         quoteWrap: document.querySelector('.quote'),
         container: document.querySelector('.container')
@@ -111,9 +113,66 @@ document.addEventListener('DOMContentLoaded', () => {
     // Current mode
     let currentModeIndex = 0;
     const LIFE_MODE_INDEX = 3;
-    const LIFE_EXPECTANCY_YEARS = 80;
-    const LIFE_TOTAL_DAYS = 29220;
     const LIFE_DOB_STORAGE_KEY = 'timeProgressDob';
+    const LIFE_CONFIG_STORAGE_KEY = 'timeProgressLifeConfig';
+    const DEFAULT_LIFE_EXPECTANCY_YEARS = 80;
+    const DEFAULT_LIFE_STAGE_BOUNDARIES = [1, 3, 8, 12, 18, 40, 60];
+
+    const LIFE_STAGE_META = [
+        { name: 'Infancy', description: 'Rapid physical development, bonding, and motor skill acquisition.' },
+        { name: 'Toddlerhood', description: 'Walking, talking, and developing a sense of autonomy.' },
+        { name: 'Early Childhood', description: 'Socialization begins, imaginative play, and school preparation.' },
+        { name: 'Middle/Late Childhood', description: 'Academic skills, friendships, and developing a sense of industry.' },
+        { name: 'Adolescence', description: 'Puberty, identity formation, and increased independence.' },
+        { name: 'Early Adulthood', description: 'Career establishment, intimate relationships, and family building.' },
+        { name: 'Middle Adulthood', description: 'Peak career, sandwich generation, and for some, career reassessment.' },
+        { name: 'Late Adulthood / Senior', description: 'Retirement, potential health shifts, and reflecting on life\'s accomplishments.' }
+    ];
+
+    let lifeConfig = {
+        expectancyYears: DEFAULT_LIFE_EXPECTANCY_YEARS,
+        stageBoundaries: DEFAULT_LIFE_STAGE_BOUNDARIES.slice()
+    };
+
+    function loadLifeConfig() {
+        try {
+            const raw = localStorage.getItem(LIFE_CONFIG_STORAGE_KEY);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (typeof parsed.expectancyYears === 'number' && Array.isArray(parsed.stageBoundaries) && parsed.stageBoundaries.length === 7) {
+                    lifeConfig.expectancyYears = Math.max(50, Math.min(120, parsed.expectancyYears));
+                    const exp = lifeConfig.expectancyYears;
+                    lifeConfig.stageBoundaries = parsed.stageBoundaries.map((y) => Math.max(0, Math.min(120, Number(y))));
+                    lifeConfig.stageBoundaries[0] = Math.max(1, lifeConfig.stageBoundaries[0]);
+                    for (let i = 1; i < 7; i++) {
+                        if (lifeConfig.stageBoundaries[i] <= lifeConfig.stageBoundaries[i - 1]) {
+                            lifeConfig.stageBoundaries[i] = lifeConfig.stageBoundaries[i - 1] + 1;
+                        }
+                    }
+                    if (lifeConfig.stageBoundaries[6] >= exp) {
+                        lifeConfig.stageBoundaries[6] = Math.max(lifeConfig.stageBoundaries[5] + 1, exp - 1);
+                    }
+                }
+            }
+        } catch (e) {
+            lifeConfig = { expectancyYears: DEFAULT_LIFE_EXPECTANCY_YEARS, stageBoundaries: DEFAULT_LIFE_STAGE_BOUNDARIES.slice() };
+        }
+    }
+
+    function getLifeExpectancyYears() {
+        return lifeConfig.expectancyYears;
+    }
+
+    function getLifeTotalDays() {
+        return Math.round(getLifeExpectancyYears() * 365.25);
+    }
+
+    function getLifeStageBoundaries() {
+        return lifeConfig.stageBoundaries;
+    }
+
+    loadLifeConfig();
+
     const LIFE_HOLD_DURATION_MS = 3000;
     const LIFE_CANVAS_CSS_HYSTERESIS_PX = 2;
     const LIFE_RESIZE_DEBOUNCE_MS = 200;
@@ -135,7 +194,6 @@ document.addEventListener('DOMContentLoaded', () => {
         { active: '#b87ee0', inactive: 'rgba(184, 126, 224, 0.25)' },
         { active: '#8a9bb0', inactive: 'rgba(138, 155, 176, 0.25)' }
     ];
-    const LIFE_STAGE_BOUNDARIES_YEARS = [1, 3, 8, 12, 18, 40, 60];
 
     let lifeHoldTimer = null;
     let lifeHoldTriggered = false;
@@ -653,6 +711,85 @@ document.addEventListener('DOMContentLoaded', () => {
         resetLifeCanvasRenderCache();
     }
 
+    function renderLifePhaseRows() {
+        const container = elements.lifePhaseRows;
+        if (!container) return;
+        const boundaries = getLifeStageBoundaries();
+        const lifespan = getLifeExpectancyYears();
+        container.innerHTML = '';
+        LIFE_STAGE_META.forEach((meta, index) => {
+            const row = document.createElement('div');
+            row.className = 'life-phase-row';
+            const startAge = index === 0 ? 0 : boundaries[index - 1];
+            const endAge = index < 7 ? boundaries[index] : lifespan;
+            const header = document.createElement('div');
+            header.className = 'life-phase-row-header';
+            const nameEl = document.createElement('span');
+            nameEl.className = 'life-phase-name';
+            nameEl.textContent = meta.name;
+            const rangeEl = document.createElement('span');
+            rangeEl.className = 'life-phase-range';
+            if (index < 7) {
+                rangeEl.textContent = startAge + ' – ';
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.min = Math.max(1, startAge + 1);
+                input.max = Math.min(119, lifespan - 1);
+                input.value = endAge;
+                input.setAttribute('aria-label', meta.name + ' end age');
+                input.dataset.phaseIndex = String(index);
+                rangeEl.appendChild(input);
+                rangeEl.appendChild(document.createTextNode(' years'));
+            } else {
+                rangeEl.innerHTML = startAge + ' – <span id="life-phase-end-lifespan">' + lifespan + '</span> years';
+            }
+            header.appendChild(nameEl);
+            header.appendChild(rangeEl);
+            const descEl = document.createElement('p');
+            descEl.className = 'life-phase-desc';
+            descEl.textContent = meta.description;
+            row.appendChild(header);
+            row.appendChild(descEl);
+            container.appendChild(row);
+        });
+    }
+
+    function syncLifeConfigToModal() {
+        if (elements.lifeExpectancyYears) {
+            elements.lifeExpectancyYears.value = String(getLifeExpectancyYears());
+        }
+        renderLifePhaseRows();
+    }
+
+    function readLifeConfigFromModal() {
+        const expectancy = Math.max(50, Math.min(120, Number(elements.lifeExpectancyYears?.value) || DEFAULT_LIFE_EXPECTANCY_YEARS));
+        const boundaries = [];
+        for (let i = 0; i < 7; i++) {
+            const input = elements.lifePhaseRows?.querySelector('input[data-phase-index="' + i + '"]');
+            const val = input ? Math.max(0, Math.min(120, Number(input.value) || 0)) : getLifeStageBoundaries()[i];
+            boundaries.push(val);
+        }
+        boundaries[0] = Math.max(1, boundaries[0]);
+        for (let i = 1; i < 7; i++) {
+            if (boundaries[i] <= boundaries[i - 1]) {
+                boundaries[i] = boundaries[i - 1] + 1;
+            }
+        }
+        if (boundaries[6] >= expectancy) {
+            boundaries[6] = Math.max(boundaries[5] + 1, Math.max(1, expectancy - 1));
+        }
+        return { expectancyYears: expectancy, stageBoundaries: boundaries };
+    }
+
+    function saveLifeConfig(config) {
+        lifeConfig.expectancyYears = config.expectancyYears;
+        lifeConfig.stageBoundaries = config.stageBoundaries.slice();
+        try {
+            localStorage.setItem(LIFE_CONFIG_STORAGE_KEY, JSON.stringify(lifeConfig));
+        } catch (e) {}
+        resetLifeCanvasRenderCache();
+    }
+
     function setupDobControls() {
         const monthNames = ['Month', 'January', 'February', 'March', 'April', 'May', 'June',
                             'July', 'August', 'September', 'October', 'November', 'December'];
@@ -683,6 +820,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        syncLifeConfigToModal();
+        if (elements.lifeExpectancyYears) {
+            elements.lifeExpectancyYears.addEventListener('input', () => {
+                const span = document.getElementById('life-phase-end-lifespan');
+                if (span) span.textContent = elements.lifeExpectancyYears.value || getLifeExpectancyYears();
+            });
+        }
+
         const onDobChange = () => {
             updateDayOptions(elements.dobMonth.value, elements.dobYear.value);
             saveDobIfComplete();
@@ -698,6 +843,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         elements.dobConfirm.addEventListener('click', () => {
             saveDobIfComplete();
+            const config = readLifeConfigFromModal();
+            saveLifeConfig(config);
             closeDobModal();
             updateTime();
         });
@@ -776,7 +923,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let best = null;
 
         for (let columns = 1; columns <= width; columns++) {
-            const rows = Math.ceil(LIFE_TOTAL_DAYS / columns);
+            const rows = Math.ceil(getLifeTotalDays() / columns);
             if (rows > height) {
                 continue;
             }
@@ -795,8 +942,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return best;
         }
         const minColumns = 20;
-        const columns = Math.max(minColumns, Math.min(width, Math.ceil(LIFE_TOTAL_DAYS / height)));
-        const rows = Math.ceil(LIFE_TOTAL_DAYS / columns);
+        const columns = Math.max(minColumns, Math.min(width, Math.ceil(getLifeTotalDays() / height)));
+        const rows = Math.ceil(getLifeTotalDays() / columns);
         const cellWidth = (width - (columns - 1) * gap) / columns;
         const cellHeight = (height - (rows - 1) * gap) / rows;
         return { columns, rows, cellWidth, cellHeight, gap, offsetX: 0, offsetY: 0 };
@@ -890,35 +1037,52 @@ document.addEventListener('DOMContentLoaded', () => {
         resizeLifeCanvas(true);
     }
 
+    function parsePx(value) {
+        if (typeof value !== 'string') return 0;
+        const n = parseFloat(value);
+        return Number.isFinite(n) ? n : 0;
+    }
+
     function updateLifeCurrentDayMarker(lifeStats) {
         const marker = elements.lifeCurrentDayMarker;
-        if (!marker || currentModeIndex !== LIFE_MODE_INDEX) return;
+        const wrap = elements.lifeCanvasWrap;
+        if (!marker || !wrap || currentModeIndex !== LIFE_MODE_INDEX) return;
         const { livedDays, currentDayIndex } = lifeStats;
-        if (!lifeCanvasState.context || livedDays >= LIFE_TOTAL_DAYS || !getDobFromSelection()) {
+        if (!lifeCanvasState.context || livedDays >= getLifeTotalDays() || !getDobFromSelection()) {
             marker.classList.add('hidden');
             return;
         }
         const canvas = elements.lifeDaysCanvas;
+        const wrapRect = wrap.getBoundingClientRect();
         const canvasRect = canvas.getBoundingClientRect();
+        const style = window.getComputedStyle(canvas);
+        const borderLeft = parsePx(style.borderLeftWidth);
+        const borderRight = parsePx(style.borderRightWidth);
+        const borderTop = parsePx(style.borderTopWidth);
+        const borderBottom = parsePx(style.borderBottomWidth);
+        const contentWidth = canvasRect.width - borderLeft - borderRight;
+        const contentHeight = canvasRect.height - borderTop - borderBottom;
         const { columns, cellWidth, cellHeight, gap, offsetX, offsetY, width: bufW, height: bufH } = lifeCanvasState;
-        if (bufW <= 0 || bufH <= 0) {
+        if (bufW <= 0 || bufH <= 0 || contentWidth <= 0 || contentHeight <= 0) {
             marker.classList.add('hidden');
             return;
         }
-        const scaleX = canvasRect.width / bufW;
-        const scaleY = canvasRect.height / bufH;
+        const scaleX = contentWidth / bufW;
+        const scaleY = contentHeight / bufH;
         const column = currentDayIndex % columns;
         const row = Math.floor(currentDayIndex / columns);
         const xBuf = offsetX + column * (cellWidth + gap);
         const yBuf = offsetY + row * (cellHeight + gap);
-        const left = xBuf * scaleX;
-        const top = yBuf * scaleY;
+        const contentLeft = canvasRect.left + borderLeft - wrapRect.left;
+        const contentTop = canvasRect.top + borderTop - wrapRect.top;
+        const left = contentLeft + xBuf * scaleX;
+        const top = contentTop + yBuf * scaleY;
         const w = cellWidth * scaleX;
         const h = cellHeight * scaleY;
-        marker.style.left = left + 'px';
-        marker.style.top = top + 'px';
-        marker.style.width = Math.max(1, w) + 'px';
-        marker.style.height = Math.max(1, h) + 'px';
+        marker.style.left = Math.round(left * 10) / 10 + 'px';
+        marker.style.top = Math.round(top * 10) / 10 + 'px';
+        marker.style.width = Math.max(1, Math.round(w * 10) / 10) + 'px';
+        marker.style.height = Math.max(1, Math.round(h * 10) / 10) + 'px';
         marker.classList.remove('hidden');
     }
 
@@ -960,8 +1124,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getStageForDayIndex(index) {
         const ageInYears = index / 365.25;
-        for (let stageIndex = 0; stageIndex < LIFE_STAGE_BOUNDARIES_YEARS.length; stageIndex++) {
-            if (ageInYears < LIFE_STAGE_BOUNDARIES_YEARS[stageIndex]) {
+        const boundaries = getLifeStageBoundaries();
+        for (let stageIndex = 0; stageIndex < boundaries.length; stageIndex++) {
+            if (ageInYears < boundaries[stageIndex]) {
                 return stageIndex;
             }
         }
@@ -972,7 +1137,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const stageIndex = getStageForDayIndex(index);
         const stageColors = LIFE_STAGE_PALETTE[stageIndex];
 
-        if (index === currentDayIndex && index < LIFE_TOTAL_DAYS && currentDayAlpha !== null) {
+        if (index === currentDayIndex && index < getLifeTotalDays() && currentDayAlpha !== null) {
             const rgb = hexToRgb(stageColors.active);
             return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${currentDayAlpha})`;
         }
@@ -1073,6 +1238,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function openDobModal() {
+        syncLifeConfigToModal();
         elements.dobModal.classList.remove('hidden');
         lifeHoldCompletedAt = Date.now();
     }
@@ -1088,7 +1254,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const endOfLife = new Date(dob);
-        endOfLife.setFullYear(endOfLife.getFullYear() + LIFE_EXPECTANCY_YEARS);
+        endOfLife.setFullYear(endOfLife.getFullYear() + getLifeExpectancyYears());
 
         let progress = 0;
         if (now > dob) {
@@ -1096,8 +1262,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         progress = Math.max(0, Math.min(1, progress));
 
-        const livedDays = Math.floor(progress * LIFE_TOTAL_DAYS);
-        const currentDayIndex = Math.min(LIFE_TOTAL_DAYS - 1, livedDays);
+        const totalDays = getLifeTotalDays();
+        const livedDays = Math.floor(progress * totalDays);
+        const currentDayIndex = Math.min(totalDays - 1, livedDays);
         return { progress, livedDays, currentDayIndex };
     }
 
@@ -1117,7 +1284,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (lifeCanvasState.lastLivedDays === null) {
             clearLifeCanvas();
-            for (let index = 0; index < LIFE_TOTAL_DAYS; index++) {
+            for (let index = 0; index < getLifeTotalDays(); index++) {
                 drawLifeDay(index, getColorForDay(index, livedDays, currentDayIndex));
             }
         } else if (lifeCanvasState.lastLivedDays !== livedDays) {
@@ -1134,11 +1301,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const previousCurrentDayIndex = lifeCanvasState.lastCurrentDayIndex;
-        if (typeof previousCurrentDayIndex === 'number' && previousCurrentDayIndex < LIFE_TOTAL_DAYS) {
+        if (typeof previousCurrentDayIndex === 'number' && previousCurrentDayIndex < getLifeTotalDays()) {
             drawLifeDay(previousCurrentDayIndex, getColorForDay(previousCurrentDayIndex, livedDays, currentDayIndex));
         }
 
-        if (livedDays < LIFE_TOTAL_DAYS) {
+        if (livedDays < getLifeTotalDays()) {
             drawLifeDay(currentDayIndex, getColorForDay(currentDayIndex, livedDays, currentDayIndex, null));
         }
 
