@@ -8,6 +8,19 @@
 </head>
 <body>
     <div class="container">
+        <div id="life-unit" class="time-unit life-unit hidden">
+            <h3 id="life-value">Life</h3>
+            <div class="progress-container">
+                <div id="life-progress" class="progress-bar"></div>
+            </div>
+            <p id="life-percentage">0.00000000%</p>
+            <div id="dob-controls" class="dob-controls hidden">
+                <select id="dob-month" aria-label="Birth month"></select>
+                <select id="dob-day" aria-label="Birth day"></select>
+                <select id="dob-year" aria-label="Birth year"></select>
+            </div>
+        </div>
+
         <div class="time-unit">
             <h3 id="year-value"></h3>
             <div class="progress-container">

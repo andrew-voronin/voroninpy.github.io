@@ -41,6 +41,12 @@ document.addEventListener('DOMContentLoaded', () => {
             progress: document.getElementById('hour-progress'),
             percentage: document.getElementById('hour-percentage')
         },
+        life: {
+            unit: document.getElementById('life-unit'),
+            value: document.getElementById('life-value'),
+            progress: document.getElementById('life-progress'),
+            percentage: document.getElementById('life-percentage')
+        },
         quote: document.getElementById('time-quote'),
         modeOverlay: document.getElementById('mode-overlay'),
         devControls: document.getElementById('dev-controls'),
@@ -48,7 +54,11 @@ document.addEventListener('DOMContentLoaded', () => {
         devTime: document.getElementById('dev-time'),
         devApply: document.getElementById('dev-apply'),
         devReset: document.getElementById('dev-reset'),
-        devDebug: null
+        devDebug: null,
+        dobControls: document.getElementById('dob-controls'),
+        dobMonth: document.getElementById('dob-month'),
+        dobDay: document.getElementById('dob-day'),
+        dobYear: document.getElementById('dob-year')
     };
 
     // Development mode variables
@@ -91,6 +101,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Current mode
     let currentModeIndex = 0;
+    const LIFE_MODE_INDEX = 3;
+    const LIFE_EXPECTANCY_YEARS = 80;
+    const LIFE_DOB_STORAGE_KEY = 'timeProgressDob';
+
 
     // Simple console logger
     function log(msg) {
@@ -184,6 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Helper function to get window bounds today
     function getTodayWindow(windowStartStr, windowEndStr) {
         const now = getCurrentTime();
+        applyLifeModeState();
         
         // Parse start time
         const [startHour, startMin] = windowStartStr.split(':').map(Number);
@@ -414,12 +429,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Calculate progress for a time unit based on the current mode
     function calculateProgress(unit, now, startDate, endDate) {
         if (debugModeActive) {
-            const modeNames = ["ABSOLUTE", "ACTIVE", "WORK"];
+            const modeNames = ["ABSOLUTE", "ACTIVE", "WORK", "LIFE"];
             log(`Calculating progress for ${unit}, mode=${modeNames[currentModeIndex]}, day=${getDayName(now.getDay())}`);
         }
     
         // ABSOLUTE mode - original calculation
-        if (currentModeIndex === 0) {
+        if (currentModeIndex === 0 || currentModeIndex === LIFE_MODE_INDEX) {
             return calculateAbsoluteProgress(now, startDate, endDate);
         }
         
@@ -471,10 +486,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Mode switching function
     function cycleMode() {
         // Move to next mode in cycle
-        currentModeIndex = (currentModeIndex + 1) % 3; // Cycle through 0, 1, 2
+        currentModeIndex = (currentModeIndex + 1) % 4; // Cycle through 0, 1, 2, 3
         
-        const modeNames = ["ABSOLUTE", "ACTIVE", "WORK"];
+        const modeNames = ["ABSOLUTE", "ACTIVE", "WORK", "LIFE"];
         log(`Switched to ${modeNames[currentModeIndex]} mode`);
+
+        applyLifeModeState();
         
         // Show mode overlay
         elements.modeOverlay.textContent = modeNames[currentModeIndex];
@@ -513,10 +530,160 @@ document.addEventListener('DOMContentLoaded', () => {
         return new Date();
     }
     
+    function createSelectOption(value, text) {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = text;
+        return option;
+    }
+
+    function updateDayOptions(selectedMonth, selectedYear) {
+        const month = Number(selectedMonth);
+        const year = Number(selectedYear);
+        const previousDay = elements.dobDay.value;
+        elements.dobDay.innerHTML = '';
+
+        const isValidMonth = Number.isInteger(month) && month >= 0 && month <= 11;
+        const isValidYear = Number.isInteger(year) && year > 0;
+
+        if (!isValidMonth || !isValidYear) {
+            elements.dobDay.appendChild(createSelectOption('', 'Day'));
+            return;
+        }
+
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        elements.dobDay.appendChild(createSelectOption('', 'Day'));
+        for (let day = 1; day <= daysInMonth; day++) {
+            elements.dobDay.appendChild(createSelectOption(String(day), String(day)));
+        }
+
+        if (previousDay && Number(previousDay) <= daysInMonth) {
+            elements.dobDay.value = previousDay;
+        }
+    }
+
+    function saveDobIfComplete() {
+        const month = elements.dobMonth.value;
+        const day = elements.dobDay.value;
+        const year = elements.dobYear.value;
+
+        if (!month || !day || !year) {
+            localStorage.removeItem(LIFE_DOB_STORAGE_KEY);
+            return;
+        }
+
+        const dob = new Date(Number(year), Number(month), Number(day));
+        const isValidDate = dob.getFullYear() === Number(year) && dob.getMonth() === Number(month) && dob.getDate() === Number(day);
+
+        if (!isValidDate || dob > new Date()) {
+            localStorage.removeItem(LIFE_DOB_STORAGE_KEY);
+            return;
+        }
+
+        localStorage.setItem(LIFE_DOB_STORAGE_KEY, JSON.stringify({
+            year: Number(year),
+            month: Number(month),
+            day: Number(day)
+        }));
+    }
+
+    function setupDobControls() {
+        const monthNames = ['Month', 'January', 'February', 'March', 'April', 'May', 'June',
+                            'July', 'August', 'September', 'October', 'November', 'December'];
+
+        monthNames.forEach((name, index) => {
+            const value = index === 0 ? '' : String(index - 1);
+            elements.dobMonth.appendChild(createSelectOption(value, name));
+        });
+
+        const currentYear = new Date().getFullYear();
+        elements.dobYear.appendChild(createSelectOption('', 'Year'));
+        for (let year = currentYear; year >= currentYear - 120; year--) {
+            elements.dobYear.appendChild(createSelectOption(String(year), String(year)));
+        }
+
+        updateDayOptions(elements.dobMonth.value, elements.dobYear.value);
+
+        const savedDobRaw = localStorage.getItem(LIFE_DOB_STORAGE_KEY);
+        if (savedDobRaw) {
+            try {
+                const savedDob = JSON.parse(savedDobRaw);
+                elements.dobMonth.value = String(savedDob.month);
+                elements.dobYear.value = String(savedDob.year);
+                updateDayOptions(savedDob.month, savedDob.year);
+                elements.dobDay.value = String(savedDob.day);
+            } catch (error) {
+                localStorage.removeItem(LIFE_DOB_STORAGE_KEY);
+            }
+        }
+
+        const onDobChange = () => {
+            updateDayOptions(elements.dobMonth.value, elements.dobYear.value);
+            saveDobIfComplete();
+            updateTime();
+        };
+
+        elements.dobMonth.addEventListener('change', onDobChange);
+        elements.dobYear.addEventListener('change', onDobChange);
+        elements.dobDay.addEventListener('change', () => {
+            saveDobIfComplete();
+            updateTime();
+        });
+    }
+
+    function getDobFromSelection() {
+        const month = elements.dobMonth.value;
+        const day = elements.dobDay.value;
+        const year = elements.dobYear.value;
+
+        if (!month || !day || !year) {
+            return null;
+        }
+
+        const dob = new Date(Number(year), Number(month), Number(day));
+        const isValidDate = dob.getFullYear() === Number(year) && dob.getMonth() === Number(month) && dob.getDate() === Number(day);
+
+        if (!isValidDate || dob > getCurrentTime()) {
+            return null;
+        }
+
+        return dob;
+    }
+
+    function calculateLifeProgress(now) {
+        const dob = getDobFromSelection();
+        if (!dob) {
+            return 0;
+        }
+
+        const endOfLife = new Date(dob);
+        endOfLife.setFullYear(endOfLife.getFullYear() + LIFE_EXPECTANCY_YEARS);
+
+        if (now <= dob) {
+            return 0;
+        }
+
+        if (now >= endOfLife) {
+            return 1;
+        }
+
+        return (now - dob) / (endOfLife - dob);
+    }
+
+    function applyLifeModeState() {
+        const isLifeMode = currentModeIndex === LIFE_MODE_INDEX;
+        document.body.classList.toggle('life-mode', isLifeMode);
+        elements.life.unit.classList.toggle('hidden', !isLifeMode);
+
+        const hasDob = !!getDobFromSelection();
+        elements.dobControls.classList.toggle('hidden', !isLifeMode || hasDob);
+    }
+
     // Click anywhere to cycle modes
     document.addEventListener('click', (event) => {
         // Don't cycle mode if clicking on dev controls
-        if (elements.devControls && elements.devControls.contains(event.target)) {
+        if ((elements.devControls && elements.devControls.contains(event.target)) ||
+            (elements.dobControls && elements.dobControls.contains(event.target))) {
             return;
         }
         cycleMode();
@@ -535,6 +702,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Update time function
     function updateTime() {
         const now = getCurrentTime();
+        applyLifeModeState();
         const year = now.getFullYear();
         const month = now.getMonth();
         const date = now.getDate();
@@ -589,6 +757,12 @@ document.addEventListener('DOMContentLoaded', () => {
         updateElement(elements.day, getDayName(day), dayProgress);
         updateElement(elements.hour, `${hours}:${minutes.toString().padStart(2, '0')}`, hourProgress);
 
+        if (currentModeIndex === LIFE_MODE_INDEX) {
+            const lifeProgress = calculateLifeProgress(now);
+            updateElement(elements.life, 'Life', lifeProgress);
+            elements.dobControls.classList.toggle('hidden', !!getDobFromSelection());
+        }
+
         // Pulse effect on active progress bars
         addPulseEffect();
     }
@@ -633,6 +807,9 @@ document.addEventListener('DOMContentLoaded', () => {
             hourBar.classList.remove('pulse');
         }, 500);
     }
+
+    setupDobControls();
+    applyLifeModeState();
 
     // Initialize and update every 100ms for smooth animations
     updateTime();
