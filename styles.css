@@ -53,6 +53,10 @@ html, body {
     z-index: 1200;
 }
 
+.dob-modal.hidden {
+    display: none;
+}
+
 .dob-modal-content {
     background: #10131b;
     border: 1px solid #4a9fff;
@@ -110,6 +114,12 @@ body.life-mode .quote {
     display: none;
 }
 
+body.life-mode .life-unit {
+    justify-content: flex-start;
+    margin-bottom: 0;
+    gap: 0.8vh;
+}
+
 .life-days-grid {
     display: grid;
     grid-template-columns: repeat(180, minmax(0, 1fr));
@@ -120,8 +130,9 @@ body.life-mode .quote {
 }
 
 .life-day {
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.14);
     border-radius: 1px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .life-day.lived {

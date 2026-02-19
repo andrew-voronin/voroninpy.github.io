@@ -61,7 +61,9 @@ document.addEventListener('DOMContentLoaded', () => {
         dobDay: document.getElementById('dob-day'),
         dobYear: document.getElementById('dob-year'),
         dobModal: document.getElementById('dob-modal'),
-        dobConfirm: document.getElementById('dob-confirm')
+        dobConfirm: document.getElementById('dob-confirm'),
+        nonLifeUnits: document.querySelectorAll('.container > .time-unit:not(.life-unit)'),
+        quoteWrap: document.querySelector('.quote')
     };
 
     // Development mode variables
@@ -113,6 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let lifeDayCells = [];
     let lifeHoldTimer = null;
     let lifeHoldTriggered = false;
+    let lifeHoldCompletedAt = 0;
     let lastLifeRenderState = null;
 
 
@@ -664,6 +667,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function openDobModal() {
         elements.dobModal.classList.remove('hidden');
+        lifeHoldCompletedAt = Date.now();
     }
 
     function closeDobModal() {
@@ -759,6 +763,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const isLifeMode = currentModeIndex === LIFE_MODE_INDEX;
         document.body.classList.toggle('life-mode', isLifeMode);
         elements.life.unit.classList.toggle('hidden', !isLifeMode);
+        elements.nonLifeUnits.forEach(unit => unit.classList.toggle('hidden', isLifeMode));
+        if (elements.quoteWrap) {
+            elements.quoteWrap.classList.toggle('hidden', isLifeMode);
+        }
         if (!isLifeMode) {
             closeDobModal();
         }
@@ -780,11 +788,22 @@ document.addEventListener('DOMContentLoaded', () => {
         clearTimeout(lifeHoldTimer);
     }
 
+    function cancelLifeHoldAndFlag(event) {
+        stopLifeHold();
+        if (lifeHoldTriggered && event) {
+            lifeHoldCompletedAt = Date.now();
+            event.preventDefault();
+            event.stopPropagation();
+        }
+    }
+
     // Click anywhere to cycle modes
     document.addEventListener('click', (event) => {
+        const holdCooldownActive = Date.now() - lifeHoldCompletedAt < 1200;
         // Don't cycle mode if clicking on dev controls
         if ((elements.devControls && elements.devControls.contains(event.target)) ||
             (elements.dobModal && elements.dobModal.contains(event.target)) ||
+            holdCooldownActive ||
             (currentModeIndex === LIFE_MODE_INDEX && elements.life.value.contains(event.target) && lifeHoldTriggered)) {
             return;
         }
@@ -792,9 +811,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     elements.life.value.addEventListener('pointerdown', startLifeHold);
-    elements.life.value.addEventListener('pointerup', stopLifeHold);
+    elements.life.value.addEventListener('pointerup', cancelLifeHoldAndFlag);
     elements.life.value.addEventListener('pointerleave', stopLifeHold);
     elements.life.value.addEventListener('pointercancel', stopLifeHold);
+    elements.life.value.addEventListener('touchstart', startLifeHold, { passive: true });
+    elements.life.value.addEventListener('touchend', cancelLifeHoldAndFlag);
+    elements.life.value.addEventListener('mousedown', startLifeHold);
+    elements.life.value.addEventListener('mouseup', cancelLifeHoldAndFlag);
+    elements.life.value.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+    });
 
     // Change quote periodically
     setInterval(() => {
