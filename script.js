@@ -116,7 +116,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let lifeHoldTimer = null;
     let lifeHoldTriggered = false;
     let lifeHoldCompletedAt = 0;
-    let lastLifeRenderState = null;
+    const lifeGridState = {
+        initialized: false,
+        lastLivedDays: null,
+        lastCurrentDayIndex: null
+    };
 
 
     // Simple console logger
@@ -582,7 +586,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!month || !day || !year) {
             localStorage.removeItem(LIFE_DOB_STORAGE_KEY);
-            lastLifeRenderState = null;
+            lifeGridState.initialized = false;
+            lifeGridState.lastLivedDays = null;
+            lifeGridState.lastCurrentDayIndex = null;
             return;
         }
 
@@ -591,7 +597,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!isValidDate || dob > new Date()) {
             localStorage.removeItem(LIFE_DOB_STORAGE_KEY);
-            lastLifeRenderState = null;
+            lifeGridState.initialized = false;
+            lifeGridState.lastLivedDays = null;
+            lifeGridState.lastCurrentDayIndex = null;
             return;
         }
 
@@ -600,7 +608,9 @@ document.addEventListener('DOMContentLoaded', () => {
             month: Number(month),
             day: Number(day)
         }));
-        lastLifeRenderState = null;
+        lifeGridState.initialized = false;
+        lifeGridState.lastLivedDays = null;
+        lifeGridState.lastCurrentDayIndex = null;
     }
 
     function setupDobControls() {
@@ -694,53 +704,55 @@ document.addEventListener('DOMContentLoaded', () => {
         return { progress, livedDays, currentDayIndex };
     }
 
-    function renderCurrentDayCell(cell, hoursNow) {
-        cell.classList.add('current');
-        const canShowHourPixels = cell.clientWidth >= 16 && cell.clientHeight >= 16;
-        if (!canShowHourPixels) {
-            return;
-        }
-
-        cell.classList.add('detail');
-        cell.innerHTML = '';
-        const activeHours = Math.max(1, Math.min(24, hoursNow + 1));
-        for (let hour = 0; hour < 24; hour++) {
-            const hourPixel = document.createElement('span');
-            hourPixel.className = 'hour-pixel';
-            if (hour < activeHours) {
-                hourPixel.classList.add('active');
-            }
-            cell.appendChild(hourPixel);
-        }
-    }
-
-    function renderLifeDayGrid(now, lifeStats) {
+    function renderLifeDayGrid(lifeStats) {
         const { livedDays, currentDayIndex } = lifeStats;
-        const currentCell = lifeDayCells[currentDayIndex];
-        const currentCellSize = currentCell
-            ? `${currentCell.clientWidth}x${currentCell.clientHeight}`
-            : 'none';
-
-        const renderState = `${livedDays}-${currentDayIndex}-${now.getHours()}-${currentCellSize}`;
-        if (lastLifeRenderState === renderState) {
+        if (!lifeDayCells.length) {
             return;
         }
-        lastLifeRenderState = renderState;
 
-        for (let index = 0; index < lifeDayCells.length; index++) {
-            const cell = lifeDayCells[index];
-            cell.className = 'life-day';
-            cell.innerHTML = '';
-            if (index < livedDays) {
-                cell.classList.add('lived');
+        if (!lifeGridState.initialized) {
+            for (let index = 0; index < livedDays; index++) {
+                lifeDayCells[index].classList.add('lived');
+            }
+
+            if (livedDays < LIFE_TOTAL_DAYS && lifeDayCells[currentDayIndex]) {
+                lifeDayCells[currentDayIndex].classList.add('current');
+            }
+
+            lifeGridState.initialized = true;
+            lifeGridState.lastLivedDays = livedDays;
+            lifeGridState.lastCurrentDayIndex = currentDayIndex;
+            return;
+        }
+
+        if (lifeGridState.lastLivedDays !== livedDays) {
+            const previousLivedDays = lifeGridState.lastLivedDays;
+            if (previousLivedDays < livedDays) {
+                for (let index = previousLivedDays; index < livedDays; index++) {
+                    lifeDayCells[index].classList.add('lived');
+                    lifeDayCells[index].classList.remove('current');
+                }
+            } else {
+                for (let index = livedDays; index < previousLivedDays; index++) {
+                    lifeDayCells[index].classList.remove('lived');
+                    lifeDayCells[index].classList.remove('current');
+                }
+            }
+            lifeGridState.lastLivedDays = livedDays;
+        }
+
+        if (lifeGridState.lastCurrentDayIndex !== currentDayIndex) {
+            const previousCurrentCell = lifeDayCells[lifeGridState.lastCurrentDayIndex];
+            if (previousCurrentCell) {
+                previousCurrentCell.classList.remove('current');
             }
         }
 
-        if (livedDays < LIFE_TOTAL_DAYS) {
-            if (currentCell) {
-                renderCurrentDayCell(currentCell, now.getHours());
-            }
+        if (livedDays < LIFE_TOTAL_DAYS && lifeDayCells[currentDayIndex]) {
+            lifeDayCells[currentDayIndex].classList.add('current');
         }
+
+        lifeGridState.lastCurrentDayIndex = currentDayIndex;
     }
 
     function getDobFromSelection() {
@@ -896,7 +908,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentModeIndex === LIFE_MODE_INDEX) {
             const lifeStats = getLifeStats(now);
             updateElement(elements.life, 'Life', lifeStats.progress);
-            renderLifeDayGrid(now, lifeStats);
+            renderLifeDayGrid(lifeStats);
         }
 
         // Pulse effect on active progress bars
