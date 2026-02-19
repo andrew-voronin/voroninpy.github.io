@@ -44,8 +44,14 @@ const MODES = {
       // This will call the function defined in script.js
       return calculateWindowProgress(now, unit, startDate, endDate, this.start, this.end);
     }
+  },
+  LIFE: {
+    name: "LIFE",
+    calculateProgress: function(now, unit, startDate, endDate) {
+      return (now - startDate) / (endDate - startDate);
+    }
   }
 };
 
 // --- Mode Array for Cycling ------------------
-const MODE_CYCLE = [MODES.ABSOLUTE, MODES.ACTIVE, MODES.WORK]; 
+const MODE_CYCLE = [MODES.ABSOLUTE, MODES.ACTIVE, MODES.WORK, MODES.LIFE]; 
