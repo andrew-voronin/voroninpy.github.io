@@ -110,11 +110,16 @@ body.life-mode .progress-container {
 
 body.life-mode .container {
     position: fixed;
-    inset: 0;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
     height: 100%;
     max-height: 100%;
     justify-content: flex-start;
-    gap: 1.5vh;
+    padding: 0.5vh 2vh 2vh;
+    gap: 0.6vh;
 }
 
 body.life-mode .container > .time-unit:not(.life-unit),
@@ -126,7 +131,14 @@ body.life-mode .life-unit {
     flex: 1;
     justify-content: flex-start;
     margin-bottom: 0;
-    gap: 0.8vh;
+    gap: 0.4vh;
+}
+
+.life-canvas-wrap {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    display: flex;
 }
 
 .life-days-canvas {
@@ -134,10 +146,37 @@ body.life-mode .life-unit {
     width: 100%;
     min-height: 0;
     max-height: 100%;
-    margin-top: 0.8vh;
+    margin-top: 0;
     background: rgba(0, 0, 0, 0.2);
     border: 1px solid rgba(74, 159, 255, 0.4);
     border-radius: 6px;
+}
+
+body.life-mode .life-unit .life-days-canvas {
+    margin-top: 0.3vh;
+}
+
+.life-footer {
+    flex: 0 0 auto;
+    min-height: 3vh;
+}
+
+.life-current-day-marker {
+    position: absolute;
+    pointer-events: none;
+    z-index: 1;
+    box-sizing: border-box;
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.life-current-day-marker:not(.hidden) {
+    animation: lifeCurrentDayPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes lifeCurrentDayPulse {
+    0%, 100% { opacity: 0.7; box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4); }
+    50% { opacity: 1; box-shadow: 0 0 12px 2px rgba(255, 255, 255, 0.5); }
 }
 
 @keyframes currentDayBlink {

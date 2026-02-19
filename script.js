@@ -48,6 +48,9 @@ document.addEventListener('DOMContentLoaded', () => {
             percentage: document.getElementById('life-percentage')
         },
         lifeDaysCanvas: document.getElementById('life-days-canvas'),
+        lifeCanvasWrap: document.querySelector('.life-canvas-wrap'),
+        lifeFooter: document.getElementById('life-footer'),
+        lifeCurrentDayMarker: document.getElementById('life-current-day-marker'),
         quote: document.getElementById('time-quote'),
         modeOverlay: document.getElementById('mode-overlay'),
         devControls: document.getElementById('dev-controls'),
@@ -120,6 +123,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const LIFE_RESIZE_GUARD_COOLDOWN_MS = 1200;
     const LIFE_RESIZE_STORM_WINDOW_MS = 1500;
     const LIFE_RESIZE_STORM_MIN_EVENTS = 6;
+    const LIFE_FOOTER_MIN_HEIGHT_PX = 24;
+    const LIFE_CANVAS_SIZE_BUFFER_PX = 8;
     const LIFE_STAGE_PALETTE = [
         { active: '#7eb8da', inactive: 'rgba(126, 184, 218, 0.25)' },
         { active: '#6bcb9c', inactive: 'rgba(107, 203, 156, 0.25)' },
@@ -160,7 +165,8 @@ document.addEventListener('DOMContentLoaded', () => {
         lastLivedDays: null,
         lastCurrentDayIndex: null,
         lastCurrentDayAlpha: null,
-        animationFrame: null
+        animationFrame: null,
+        animationInterval: null
     };
 
 
@@ -869,6 +875,53 @@ document.addEventListener('DOMContentLoaded', () => {
         return true;
     }
 
+    function setLifeCanvasExplicitSize() {
+        if (currentModeIndex !== LIFE_MODE_INDEX || !elements.lifeDaysCanvas) return;
+        const canvas = elements.lifeDaysCanvas;
+        const vv = window.visualViewport;
+        const viewportHeight = (vv && vv.height > 0) ? vv.height : (window.innerHeight || document.documentElement.clientHeight || 400);
+        const canvasRect = canvas.getBoundingClientRect();
+        const canvasTop = canvasRect.top;
+        const footerEl = elements.lifeFooter;
+        const footerHeight = footerEl ? Math.max(LIFE_FOOTER_MIN_HEIGHT_PX, footerEl.getBoundingClientRect().height) : LIFE_FOOTER_MIN_HEIGHT_PX;
+        const availableHeight = Math.max(1, viewportHeight - canvasTop - footerHeight - LIFE_CANVAS_SIZE_BUFFER_PX);
+        canvas.style.height = availableHeight + 'px';
+        canvas.style.width = '100%';
+        resizeLifeCanvas(true);
+    }
+
+    function updateLifeCurrentDayMarker(lifeStats) {
+        const marker = elements.lifeCurrentDayMarker;
+        if (!marker || currentModeIndex !== LIFE_MODE_INDEX) return;
+        const { livedDays, currentDayIndex } = lifeStats;
+        if (!lifeCanvasState.context || livedDays >= LIFE_TOTAL_DAYS || !getDobFromSelection()) {
+            marker.classList.add('hidden');
+            return;
+        }
+        const canvas = elements.lifeDaysCanvas;
+        const canvasRect = canvas.getBoundingClientRect();
+        const { columns, cellWidth, cellHeight, gap, offsetX, offsetY, width: bufW, height: bufH } = lifeCanvasState;
+        if (bufW <= 0 || bufH <= 0) {
+            marker.classList.add('hidden');
+            return;
+        }
+        const scaleX = canvasRect.width / bufW;
+        const scaleY = canvasRect.height / bufH;
+        const column = currentDayIndex % columns;
+        const row = Math.floor(currentDayIndex / columns);
+        const xBuf = offsetX + column * (cellWidth + gap);
+        const yBuf = offsetY + row * (cellHeight + gap);
+        const left = xBuf * scaleX;
+        const top = yBuf * scaleY;
+        const w = cellWidth * scaleX;
+        const h = cellHeight * scaleY;
+        marker.style.left = left + 'px';
+        marker.style.top = top + 'px';
+        marker.style.width = Math.max(1, w) + 'px';
+        marker.style.height = Math.max(1, h) + 'px';
+        marker.classList.remove('hidden');
+    }
+
     function drawLifeDay(index, fillStyle) {
         const { context, columns, cellWidth, cellHeight, gap, offsetX, offsetY } = lifeCanvasState;
         if (!context) {
@@ -940,56 +993,34 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    function redrawCurrentLifeDay(lifeStats) {
-        const { livedDays, currentDayIndex } = lifeStats;
-        if (livedDays >= LIFE_TOTAL_DAYS) {
-            return;
-        }
-
-        const previousCurrentDayIndex = lifeCanvasState.lastCurrentDayIndex;
-        if (typeof previousCurrentDayIndex === 'number' && previousCurrentDayIndex !== currentDayIndex && previousCurrentDayIndex < LIFE_TOTAL_DAYS) {
-            drawLifeDay(previousCurrentDayIndex, getColorForDay(previousCurrentDayIndex, livedDays, currentDayIndex, null));
-        }
-
-        drawLifeDay(currentDayIndex, getColorForDay(currentDayIndex, livedDays, currentDayIndex, null));
-        const currentDayAlpha = getCurrentDayAlpha();
-        const currentDayScale = getCurrentDayScale();
-        const stageIndex = getStageForDayIndex(currentDayIndex);
-        const rgb = hexToRgb(LIFE_STAGE_PALETTE[stageIndex].active);
-        const highlightColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${currentDayAlpha})`;
-        drawLifeDayHighlight(currentDayIndex, highlightColor, currentDayScale);
-
-        lifeCanvasState.lastCurrentDayAlpha = currentDayAlpha;
-        lifeCanvasState.lastCurrentDayIndex = currentDayIndex;
-    }
-
     function stopLifeAnimationLoop() {
         if (lifeCanvasState.animationFrame) {
             cancelAnimationFrame(lifeCanvasState.animationFrame);
             lifeCanvasState.animationFrame = null;
         }
+        if (lifeCanvasState.animationInterval) {
+            clearInterval(lifeCanvasState.animationInterval);
+            lifeCanvasState.animationInterval = null;
+        }
     }
 
     function startLifeAnimationLoop() {
-        if (lifeCanvasState.animationFrame) {
-            return;
-        }
+        if (lifeCanvasState.animationFrame) return;
 
-        const animate = () => {
+        const tick = () => {
             if (currentModeIndex !== LIFE_MODE_INDEX) {
                 lifeCanvasState.animationFrame = null;
                 return;
             }
-            if (!lifeCanvasState.context) {
-                resizeLifeCanvas(true);
-            }
-            if (lifeCanvasState.context) {
-                redrawCurrentLifeDay(getLifeStats(getCurrentTime()));
-            }
-            lifeCanvasState.animationFrame = requestAnimationFrame(animate);
+            updateLifeCurrentDayMarker(getLifeStats(getCurrentTime()));
+            lifeCanvasState.animationFrame = requestAnimationFrame(tick);
         };
+        lifeCanvasState.animationFrame = requestAnimationFrame(tick);
 
-        lifeCanvasState.animationFrame = requestAnimationFrame(animate);
+        lifeCanvasState.animationInterval = setInterval(() => {
+            if (currentModeIndex !== LIFE_MODE_INDEX) return;
+            updateLifeCurrentDayMarker(getLifeStats(getCurrentTime()));
+        }, 200);
     }
 
     function clearLifeCanvas() {
@@ -1025,32 +1056,20 @@ document.addEventListener('DOMContentLoaded', () => {
             lifeCanvasState.resizeObserver.observe(elements.lifeDaysCanvas);
         }
 
-        if (window.visualViewport) {
-            const onViewportChange = () => {
-                if (currentModeIndex !== LIFE_MODE_INDEX) return;
-                setLifeModeContainerHeight();
-                clearTimeout(lifeCanvasState.viewportDebounceTimer);
-                lifeCanvasState.viewportDebounceTimer = setTimeout(() => {
-                    const resized = resizeLifeCanvas(true);
-                    if (resized) {
-                        renderLifeDayGrid(getLifeStats(getCurrentTime()));
-                    }
-                }, 100);
-            };
-            window.visualViewport.addEventListener('resize', onViewportChange);
-            window.visualViewport.addEventListener('scroll', onViewportChange);
-        }
-        window.addEventListener('resize', () => {
+        function resizeCanvasInLifeMode() {
             if (currentModeIndex !== LIFE_MODE_INDEX) return;
-            setLifeModeContainerHeight();
-            clearTimeout(lifeCanvasState.viewportDebounceTimer);
-            lifeCanvasState.viewportDebounceTimer = setTimeout(() => {
-                const resized = resizeLifeCanvas(true);
-                if (resized) {
-                    renderLifeDayGrid(getLifeStats(getCurrentTime()));
-                }
-            }, 100);
-        });
+            requestAnimationFrame(() => {
+                if (currentModeIndex !== LIFE_MODE_INDEX) return;
+                setLifeCanvasExplicitSize();
+                renderLifeDayGrid(getLifeStats(getCurrentTime()));
+                updateLifeCurrentDayMarker(getLifeStats(getCurrentTime()));
+            });
+        }
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', resizeCanvasInLifeMode);
+            window.visualViewport.addEventListener('scroll', resizeCanvasInLifeMode);
+        }
+        window.addEventListener('resize', resizeCanvasInLifeMode);
     }
 
     function openDobModal() {
@@ -1092,11 +1111,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const currentDayAlpha = getCurrentDayAlpha();
-
-        if (lifeCanvasState.lastLivedDays === livedDays
-            && lifeCanvasState.lastCurrentDayIndex === currentDayIndex
-            && lifeCanvasState.lastCurrentDayAlpha === currentDayAlpha) {
+        if (lifeCanvasState.lastLivedDays === livedDays && lifeCanvasState.lastCurrentDayIndex === currentDayIndex) {
             return;
         }
 
@@ -1124,12 +1139,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (livedDays < LIFE_TOTAL_DAYS) {
-            drawLifeDay(currentDayIndex, getColorForDay(currentDayIndex, livedDays, currentDayIndex, currentDayAlpha));
+            drawLifeDay(currentDayIndex, getColorForDay(currentDayIndex, livedDays, currentDayIndex, null));
         }
 
         lifeCanvasState.lastLivedDays = livedDays;
         lifeCanvasState.lastCurrentDayIndex = currentDayIndex;
-        lifeCanvasState.lastCurrentDayAlpha = currentDayAlpha;
+        updateLifeCurrentDayMarker(lifeStats);
     }
 
     function getDobFromSelection() {
@@ -1151,23 +1166,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return dob;
     }
 
-    function setLifeModeContainerHeight() {
-        if (currentModeIndex !== LIFE_MODE_INDEX || !elements.container) {
-            return;
-        }
-        const vv = window.visualViewport;
-        const h = (vv && vv.height > 0) ? vv.height : Math.max(1, window.innerHeight || document.documentElement.clientHeight);
-        elements.container.style.height = h + 'px';
-        elements.container.style.maxHeight = h + 'px';
-    }
-
-    function clearLifeModeContainerHeight() {
-        if (elements.container) {
-            elements.container.style.height = '';
-            elements.container.style.maxHeight = '';
-        }
-    }
-
     function applyLifeModeState() {
         const isLifeMode = currentModeIndex === LIFE_MODE_INDEX;
 
@@ -1183,31 +1181,31 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.quoteWrap.classList.toggle('hidden', isLifeMode);
         }
         if (!isLifeMode) {
-            clearLifeModeContainerHeight();
             closeDobModal();
             stopLifeAnimationLoop();
             return;
         }
 
-        setLifeModeContainerHeight();
         elements.lifeDaysCanvas.getBoundingClientRect();
-        const resized = resizeLifeCanvas(true);
-        if (resized) {
-            renderLifeDayGrid(getLifeStats(getCurrentTime()));
-        }
+        setLifeCanvasExplicitSize();
+        const lifeStats = getLifeStats(getCurrentTime());
+        renderLifeDayGrid(lifeStats);
+        updateLifeCurrentDayMarker(lifeStats);
         startLifeAnimationLoop();
 
         requestAnimationFrame(() => {
             if (currentModeIndex !== LIFE_MODE_INDEX) return;
-            setLifeModeContainerHeight();
-            const r = resizeLifeCanvas(true);
-            if (r) renderLifeDayGrid(getLifeStats(getCurrentTime()));
+            setLifeCanvasExplicitSize();
+            const stats = getLifeStats(getCurrentTime());
+            renderLifeDayGrid(stats);
+            updateLifeCurrentDayMarker(stats);
         });
         setTimeout(() => {
             if (currentModeIndex !== LIFE_MODE_INDEX) return;
-            setLifeModeContainerHeight();
-            const r = resizeLifeCanvas(true);
-            if (r) renderLifeDayGrid(getLifeStats(getCurrentTime()));
+            setLifeCanvasExplicitSize();
+            const stats = getLifeStats(getCurrentTime());
+            renderLifeDayGrid(stats);
+            updateLifeCurrentDayMarker(stats);
         }, 400);
     }
 

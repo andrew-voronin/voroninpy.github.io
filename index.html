@@ -14,7 +14,11 @@
                 <div id="life-progress" class="progress-bar"></div>
             </div>
             <p id="life-percentage">0.00000000%</p>
-            <canvas id="life-days-canvas" class="life-days-canvas" aria-label="Life day map" role="img"></canvas>
+            <div class="life-canvas-wrap">
+                <canvas id="life-days-canvas" class="life-days-canvas" aria-label="Life day map" role="img"></canvas>
+                <div id="life-current-day-marker" class="life-current-day-marker hidden" aria-hidden="true"></div>
+            </div>
+            <div id="life-footer" class="life-footer" aria-hidden="true"></div>
             <div id="dob-modal" class="dob-modal hidden" role="dialog" aria-modal="true" aria-labelledby="dob-modal-title">
                 <div class="dob-modal-content">
                     <h4 id="dob-modal-title">Set date of birth</h4>
