@@ -115,6 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let lifeHoldTimer = null;
     let lifeHoldTriggered = false;
     let lifeHoldCompletedAt = 0;
+    let isLifeModeApplied = null;
     const lifeCanvasState = {
         context: null,
         width: 0,
@@ -224,7 +225,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Helper function to get window bounds today
     function getTodayWindow(windowStartStr, windowEndStr) {
         const now = getCurrentTime();
-        applyLifeModeState();
         
         // Parse start time
         const [startHour, startMin] = windowStartStr.split(':').map(Number);
@@ -771,6 +771,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (typeof ResizeObserver !== 'undefined' && elements.lifeDaysCanvas) {
             lifeCanvasState.resizeObserver = new ResizeObserver(() => {
+                if (debugModeActive) {
+                    const rect = elements.lifeDaysCanvas.getBoundingClientRect();
+                    log(`ResizeObserver: width=${rect.width.toFixed(2)}, height=${rect.height.toFixed(2)}`);
+                }
                 const hasResized = resizeLifeCanvas();
                 if (!hasResized) {
                     return;
@@ -881,6 +885,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function applyLifeModeState() {
         const isLifeMode = currentModeIndex === LIFE_MODE_INDEX;
+
+        if (isLifeModeApplied === isLifeMode) {
+            return;
+        }
+
+        isLifeModeApplied = isLifeMode;
         document.body.classList.toggle('life-mode', isLifeMode);
         elements.life.unit.classList.toggle('hidden', !isLifeMode);
         elements.nonLifeUnits.forEach(unit => unit.classList.toggle('hidden', isLifeMode));
@@ -955,7 +965,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Update time function
     function updateTime() {
         const now = getCurrentTime();
-        applyLifeModeState();
         const year = now.getFullYear();
         const month = now.getMonth();
         const date = now.getDate();
