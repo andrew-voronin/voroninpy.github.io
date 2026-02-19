@@ -111,10 +111,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const LIFE_TOTAL_DAYS = 29220;
     const LIFE_DOB_STORAGE_KEY = 'timeProgressDob';
     const LIFE_HOLD_DURATION_MS = 3000;
-    const LIFE_CANVAS_CSS_HYSTERESIS_PX = 1;
+    const LIFE_CANVAS_CSS_HYSTERESIS_PX = 2;
+    const LIFE_RESIZE_DEBOUNCE_MS = 200;
+    const LIFE_RESIZE_DEFERRED_MS = 500;
     const LIFE_RESIZE_GUARD_WINDOW_MS = 1200;
     const LIFE_RESIZE_GUARD_MIN_EVENTS = 12;
     const LIFE_RESIZE_GUARD_COOLDOWN_MS = 1200;
+    const LIFE_RESIZE_STORM_WINDOW_MS = 1500;
+    const LIFE_RESIZE_STORM_MIN_EVENTS = 6;
 
     let lifeHoldTimer = null;
     let lifeHoldTriggered = false;
@@ -135,9 +139,13 @@ document.addEventListener('DOMContentLoaded', () => {
         cssHeight: 0,
         resizeObserver: null,
         resizeEvents: [],
+        resizeAppliedEvents: [],
         resizeGuardUntil: 0,
+        resizeDebounceTimer: null,
+        resizeDeferredTimer: null,
         lastLivedDays: null,
-        lastCurrentDayIndex: null
+        lastCurrentDayIndex: null,
+        lastCurrentDayAlpha: null
     };
 
 
@@ -677,6 +685,59 @@ document.addEventListener('DOMContentLoaded', () => {
     function resetLifeCanvasRenderCache() {
         lifeCanvasState.lastLivedDays = null;
         lifeCanvasState.lastCurrentDayIndex = null;
+        lifeCanvasState.lastCurrentDayAlpha = null;
+    }
+
+    function triggerLifeResizeGuard(now, reason) {
+        lifeCanvasState.resizeGuardUntil = now + LIFE_RESIZE_GUARD_COOLDOWN_MS;
+        lifeCanvasState.resizeEvents = [];
+        lifeCanvasState.resizeAppliedEvents = [];
+
+        clearTimeout(lifeCanvasState.resizeDebounceTimer);
+        clearTimeout(lifeCanvasState.resizeDeferredTimer);
+
+        lifeCanvasState.resizeDeferredTimer = setTimeout(() => {
+            const resized = resizeLifeCanvas();
+            if (!resized) {
+                return;
+            }
+            renderLifeDayGrid(getLifeStats(getCurrentTime()));
+        }, LIFE_RESIZE_GUARD_COOLDOWN_MS + LIFE_RESIZE_DEFERRED_MS);
+
+        if (debugModeActive) {
+            log(`ResizeObserver guard triggered (${reason}) for ${LIFE_RESIZE_GUARD_COOLDOWN_MS}ms`);
+        }
+    }
+
+    function processLifeCanvasResizeRequest() {
+        const now = Date.now();
+        if (now < lifeCanvasState.resizeGuardUntil) {
+            if (debugModeActive) {
+                log(`ResizeObserver guard active; suppressed until ${new Date(lifeCanvasState.resizeGuardUntil).toISOString()}`);
+            }
+            return;
+        }
+
+        const hasResized = resizeLifeCanvas();
+        lifeCanvasState.resizeEvents.push(now);
+        lifeCanvasState.resizeEvents = lifeCanvasState.resizeEvents.filter((timestamp) => now - timestamp <= LIFE_RESIZE_GUARD_WINDOW_MS);
+
+        if (!hasResized && lifeCanvasState.resizeEvents.length >= LIFE_RESIZE_GUARD_MIN_EVENTS) {
+            triggerLifeResizeGuard(now, 'noop-storm');
+            return;
+        }
+
+        if (hasResized) {
+            lifeCanvasState.resizeAppliedEvents.push(now);
+            lifeCanvasState.resizeAppliedEvents = lifeCanvasState.resizeAppliedEvents.filter((timestamp) => now - timestamp <= LIFE_RESIZE_STORM_WINDOW_MS);
+
+            if (lifeCanvasState.resizeAppliedEvents.length >= LIFE_RESIZE_STORM_MIN_EVENTS) {
+                triggerLifeResizeGuard(now, 'resize-storm');
+                return;
+            }
+
+            renderLifeDayGrid(getLifeStats(getCurrentTime()));
+        }
     }
 
     function getBestCanvasGridLayout(width, height) {
@@ -797,15 +858,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (typeof ResizeObserver !== 'undefined' && elements.lifeDaysCanvas) {
             lifeCanvasState.resizeObserver = new ResizeObserver(() => {
-                const now = Date.now();
-                if (now < lifeCanvasState.resizeGuardUntil) {
-                    if (debugModeActive) {
-                        log(`ResizeObserver guard active; suppressed until ${new Date(lifeCanvasState.resizeGuardUntil).toISOString()}`);
-                    }
-                    return;
-                }
-
                 if (debugModeActive) {
+                    const now = Date.now();
                     const rect = elements.lifeDaysCanvas.getBoundingClientRect();
                     const visualViewport = window.visualViewport;
                     const vvMetrics = visualViewport
@@ -814,23 +868,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     log(`ResizeObserver ts=${new Date(now).toISOString()} rect=${rect.width.toFixed(2)}x${rect.height.toFixed(2)} inner=${window.innerWidth}x${window.innerHeight} dpr=${(window.devicePixelRatio || 1).toFixed(3)} ${vvMetrics}`);
                 }
 
-                const hasResized = resizeLifeCanvas();
-                if (!hasResized) {
-                    lifeCanvasState.resizeEvents.push(now);
-                    lifeCanvasState.resizeEvents = lifeCanvasState.resizeEvents.filter((timestamp) => now - timestamp <= LIFE_RESIZE_GUARD_WINDOW_MS);
-                    if (lifeCanvasState.resizeEvents.length >= LIFE_RESIZE_GUARD_MIN_EVENTS) {
-                        lifeCanvasState.resizeGuardUntil = now + LIFE_RESIZE_GUARD_COOLDOWN_MS;
-                        lifeCanvasState.resizeEvents = [];
-                        if (debugModeActive) {
-                            log(`ResizeObserver runaway guard triggered for ${LIFE_RESIZE_GUARD_COOLDOWN_MS}ms`);
-                        }
-                    }
-                    return;
-                }
-
-                lifeCanvasState.resizeEvents = [];
-                const stats = getLifeStats(getCurrentTime());
-                renderLifeDayGrid(stats);
+                clearTimeout(lifeCanvasState.resizeDebounceTimer);
+                lifeCanvasState.resizeDebounceTimer = setTimeout(() => {
+                    processLifeCanvasResizeRequest();
+                }, LIFE_RESIZE_DEBOUNCE_MS);
             });
             lifeCanvasState.resizeObserver.observe(elements.lifeDaysCanvas);
         }
@@ -875,13 +916,18 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (lifeCanvasState.lastLivedDays === livedDays && lifeCanvasState.lastCurrentDayIndex === currentDayIndex) {
+        const blinkPhase = 0.5 + 0.5 * Math.sin(Date.now() / 360);
+        const currentDayAlpha = Number((0.45 + blinkPhase * 0.5).toFixed(3));
+
+        if (lifeCanvasState.lastLivedDays === livedDays
+            && lifeCanvasState.lastCurrentDayIndex === currentDayIndex
+            && lifeCanvasState.lastCurrentDayAlpha === currentDayAlpha) {
             return;
         }
 
         const livedColor = 'rgba(74, 159, 255, 0.88)';
         const emptyColor = 'rgba(255, 255, 255, 0.14)';
-        const currentColor = 'rgba(0, 246, 255, 0.96)';
+        const currentColor = `rgba(0, 246, 255, ${currentDayAlpha})`;
 
         if (lifeCanvasState.lastLivedDays === null) {
             clearLifeCanvas();
@@ -912,6 +958,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         lifeCanvasState.lastLivedDays = livedDays;
         lifeCanvasState.lastCurrentDayIndex = currentDayIndex;
+        lifeCanvasState.lastCurrentDayAlpha = currentDayAlpha;
     }
 
     function getDobFromSelection() {
