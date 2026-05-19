@@ -234,6 +234,47 @@ body.life-mode .life-unit {
     gap: 0.4vh;
 }
 
+.life-settings-btn {
+    position: fixed;
+    top: 1vh;
+    right: 1vh;
+    z-index: 1100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    padding: 0;
+    border: 1px solid rgba(74, 159, 255, 0.45);
+    border-radius: 50%;
+    background: rgba(16, 19, 27, 0.85);
+    color: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.25s ease, background 0.2s ease;
+    pointer-events: auto;
+}
+
+.life-settings-btn::before {
+    content: '';
+    position: absolute;
+    inset: -0.5rem;
+}
+
+.life-settings-btn.hidden {
+    display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    body.life-mode .life-settings-btn:hover,
+    body.life-mode .life-settings-btn:focus-visible {
+        opacity: 1;
+        background: rgba(16, 19, 27, 0.95);
+        outline: none;
+        box-shadow: 0 0 12px rgba(74, 159, 255, 0.5);
+    }
+}
+
 .life-canvas-wrap {
     flex: 1;
     min-height: 0;

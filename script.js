@@ -43,10 +43,10 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         life: {
             unit: document.getElementById('life-unit'),
-            value: document.getElementById('life-value'),
             progress: document.getElementById('life-progress'),
             percentage: document.getElementById('life-percentage')
         },
+        lifeSettingsBtn: document.getElementById('life-settings-btn'),
         lifeDaysCanvas: document.getElementById('life-days-canvas'),
         lifeCanvasWrap: document.querySelector('.life-canvas-wrap'),
         lifeFooter: document.getElementById('life-footer'),
@@ -113,6 +113,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // Current mode
     let currentModeIndex = 0;
     const LIFE_MODE_INDEX = 3;
+    const LIFE_CURRENT_PHASE_MODE_INDEX = 4;
+
+    function isLifeModeIndex(index) {
+        return index === LIFE_MODE_INDEX || index === LIFE_CURRENT_PHASE_MODE_INDEX;
+    }
+
+    function isAnyLifeMode() {
+        return isLifeModeIndex(currentModeIndex);
+    }
+
+    function getModeNames() {
+        return MODE_CYCLE.map((mode) => mode.name);
+    }
     const LIFE_DOB_STORAGE_KEY = 'timeProgressDob';
     const LIFE_CONFIG_STORAGE_KEY = 'timeProgressLifeConfig';
     const DEFAULT_LIFE_EXPECTANCY_YEARS = 80;
@@ -165,7 +178,49 @@ document.addEventListener('DOMContentLoaded', () => {
         return lifeConfig.expectancyYears;
     }
 
+    function getCurrentPhaseInfo(now) {
+        const dob = getDobFromSelection();
+        if (!dob) {
+            return null;
+        }
+
+        const boundaries = getLifeStageBoundaries();
+        const lifespan = getLifeExpectancyYears();
+        const msPerYear = 365.25 * 86400000;
+        const ageYears = Math.max(0, (now - dob) / msPerYear);
+
+        let stageIndex = boundaries.length;
+        for (let i = 0; i < boundaries.length; i++) {
+            if (ageYears < boundaries[i]) {
+                stageIndex = i;
+                break;
+            }
+        }
+
+        const startAge = stageIndex === 0 ? 0 : boundaries[stageIndex - 1];
+        const endAge = stageIndex < boundaries.length ? boundaries[stageIndex] : lifespan;
+        const startDate = new Date(dob.getTime() + startAge * msPerYear);
+        const endDate = new Date(dob.getTime() + endAge * msPerYear);
+        const totalDays = Math.max(1, Math.round((endAge - startAge) * 365.25));
+        const elapsedMs = Math.max(0, now - startDate);
+        const dayIndexInPhase = Math.min(totalDays - 1, Math.floor(elapsedMs / 86400000));
+
+        return {
+            stageIndex,
+            startAge,
+            endAge,
+            startDate,
+            endDate,
+            totalDays,
+            dayIndexInPhase
+        };
+    }
+
     function getLifeTotalDays() {
+        if (currentModeIndex === LIFE_CURRENT_PHASE_MODE_INDEX) {
+            const phaseInfo = getCurrentPhaseInfo(getCurrentTime());
+            return phaseInfo ? phaseInfo.totalDays : 1;
+        }
         return Math.round(getLifeExpectancyYears() * 365.25);
     }
 
@@ -553,12 +608,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Calculate progress for a time unit based on the current mode
     function calculateProgress(unit, now, startDate, endDate) {
         if (debugModeActive) {
-            const modeNames = ["ABSOLUTE", "ACTIVE", "WORK", "LIFE"];
-            log(`Calculating progress for ${unit}, mode=${modeNames[currentModeIndex]}, day=${getDayName(now.getDay())}`);
+            log(`Calculating progress for ${unit}, mode=${getModeNames()[currentModeIndex]}, day=${getDayName(now.getDay())}`);
         }
     
         // ABSOLUTE mode - original calculation
-        if (currentModeIndex === 0 || currentModeIndex === LIFE_MODE_INDEX) {
+        if (currentModeIndex === 0 || isAnyLifeMode()) {
             return calculateAbsoluteProgress(now, startDate, endDate);
         }
         
@@ -610,10 +664,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // Mode switching function
     function cycleMode() {
         // Move to next mode in cycle
-        currentModeIndex = (currentModeIndex + 1) % 4; // Cycle through 0, 1, 2, 3
-        
-        const modeNames = ["ABSOLUTE", "ACTIVE", "WORK", "LIFE"];
+        const previousModeIndex = currentModeIndex;
+        currentModeIndex = (currentModeIndex + 1) % MODE_CYCLE.length;
+
+        const modeNames = getModeNames();
         log(`Switched to ${modeNames[currentModeIndex]} mode`);
+
+        if (isLifeModeIndex(previousModeIndex) && isLifeModeIndex(currentModeIndex) && previousModeIndex !== currentModeIndex) {
+            resetLifeCanvasRenderCache();
+        }
 
         applyLifeModeState();
         
@@ -1027,7 +1086,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function setLifeCanvasExplicitSize() {
-        if (currentModeIndex !== LIFE_MODE_INDEX || !elements.lifeDaysCanvas) return;
+        if (!isAnyLifeMode() || !elements.lifeDaysCanvas) return;
         const canvas = elements.lifeDaysCanvas;
         const vv = window.visualViewport;
         const viewportHeight = (vv && vv.height > 0) ? vv.height : (window.innerHeight || document.documentElement.clientHeight || 400);
@@ -1050,7 +1109,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateLifeCurrentDayMarker(lifeStats) {
         const marker = elements.lifeCurrentDayMarker;
         const wrap = elements.lifeCanvasWrap;
-        if (!marker || !wrap || currentModeIndex !== LIFE_MODE_INDEX) return;
+        if (!marker || !wrap || !isAnyLifeMode()) return;
         const { livedDays, currentDayIndex } = lifeStats;
         if (!lifeCanvasState.context || livedDays >= getLifeTotalDays() || !getDobFromSelection()) {
             marker.classList.add('hidden');
@@ -1127,6 +1186,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getStageForDayIndex(index) {
+        if (currentModeIndex === LIFE_CURRENT_PHASE_MODE_INDEX) {
+            const phaseInfo = getCurrentPhaseInfo(getCurrentTime());
+            return phaseInfo ? phaseInfo.stageIndex : 0;
+        }
+
         const ageInYears = index / 365.25;
         const boundaries = getLifeStageBoundaries();
         for (let stageIndex = 0; stageIndex < boundaries.length; stageIndex++) {
@@ -1177,7 +1241,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (lifeCanvasState.animationFrame) return;
 
         const tick = () => {
-            if (currentModeIndex !== LIFE_MODE_INDEX) {
+            if (!isAnyLifeMode()) {
                 lifeCanvasState.animationFrame = null;
                 return;
             }
@@ -1187,7 +1251,7 @@ document.addEventListener('DOMContentLoaded', () => {
         lifeCanvasState.animationFrame = requestAnimationFrame(tick);
 
         lifeCanvasState.animationInterval = setInterval(() => {
-            if (currentModeIndex !== LIFE_MODE_INDEX) return;
+            if (!isAnyLifeMode()) return;
             updateLifeCurrentDayMarker(getLifeStats(getCurrentTime()));
         }, 200);
     }
@@ -1226,9 +1290,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function resizeCanvasInLifeMode() {
-            if (currentModeIndex !== LIFE_MODE_INDEX) return;
+            if (!isAnyLifeMode()) return;
             requestAnimationFrame(() => {
-                if (currentModeIndex !== LIFE_MODE_INDEX) return;
+                if (!isAnyLifeMode()) return;
                 setLifeCanvasExplicitSize();
                 renderLifeDayGrid(getLifeStats(getCurrentTime()));
                 updateLifeCurrentDayMarker(getLifeStats(getCurrentTime()));
@@ -1257,6 +1321,24 @@ document.addEventListener('DOMContentLoaded', () => {
             return { progress: 0, livedDays: 0, currentDayIndex: 0 };
         }
 
+        if (currentModeIndex === LIFE_CURRENT_PHASE_MODE_INDEX) {
+            const phaseInfo = getCurrentPhaseInfo(now);
+            if (!phaseInfo) {
+                return { progress: 0, livedDays: 0, currentDayIndex: 0 };
+            }
+
+            let progress = 0;
+            if (now > phaseInfo.startDate) {
+                progress = (now - phaseInfo.startDate) / (phaseInfo.endDate - phaseInfo.startDate);
+            }
+            progress = Math.max(0, Math.min(1, progress));
+
+            const totalDays = phaseInfo.totalDays;
+            const livedDays = Math.floor(progress * totalDays);
+            const currentDayIndex = Math.min(totalDays - 1, livedDays);
+            return { progress, livedDays, currentDayIndex };
+        }
+
         const endOfLife = new Date(dob);
         endOfLife.setFullYear(endOfLife.getFullYear() + getLifeExpectancyYears());
 
@@ -1270,6 +1352,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const livedDays = Math.floor(progress * totalDays);
         const currentDayIndex = Math.min(totalDays - 1, livedDays);
         return { progress, livedDays, currentDayIndex };
+    }
+
+    function updateLifeProgress(progress) {
+        elements.life.progress.style.width = `${progress * 100}%`;
+        let percentageText = `${(progress * 100).toFixed(8)}%`;
+        if (debugModeActive) {
+            percentageText += ` [${progress.toFixed(8)}]`;
+        }
+        elements.life.percentage.textContent = percentageText;
     }
 
     function renderLifeDayGrid(lifeStats) {
@@ -1342,7 +1433,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function applyLifeModeState() {
-        const isLifeMode = currentModeIndex === LIFE_MODE_INDEX;
+        const isLifeMode = isAnyLifeMode();
+
+        if (elements.lifeSettingsBtn) {
+            elements.lifeSettingsBtn.classList.toggle('hidden', !isLifeMode);
+        }
+
+        if (isLifeModeApplied === isLifeMode && isLifeMode) {
+            resetLifeCanvasRenderCache();
+            resizeLifeCanvas(true);
+            setLifeCanvasExplicitSize();
+            const lifeStats = getLifeStats(getCurrentTime());
+            renderLifeDayGrid(lifeStats);
+            updateLifeCurrentDayMarker(lifeStats);
+            return;
+        }
 
         if (isLifeModeApplied === isLifeMode) {
             return;
@@ -1361,6 +1466,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        resetLifeCanvasRenderCache();
         elements.lifeDaysCanvas.getBoundingClientRect();
         setLifeCanvasExplicitSize();
         const lifeStats = getLifeStats(getCurrentTime());
@@ -1369,14 +1475,14 @@ document.addEventListener('DOMContentLoaded', () => {
         startLifeAnimationLoop();
 
         requestAnimationFrame(() => {
-            if (currentModeIndex !== LIFE_MODE_INDEX) return;
+            if (!isAnyLifeMode()) return;
             setLifeCanvasExplicitSize();
             const stats = getLifeStats(getCurrentTime());
             renderLifeDayGrid(stats);
             updateLifeCurrentDayMarker(stats);
         });
         setTimeout(() => {
-            if (currentModeIndex !== LIFE_MODE_INDEX) return;
+            if (!isAnyLifeMode()) return;
             setLifeCanvasExplicitSize();
             const stats = getLifeStats(getCurrentTime());
             renderLifeDayGrid(stats);
@@ -1384,8 +1490,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 400);
     }
 
-    function startLifeHold() {
-        if (currentModeIndex !== LIFE_MODE_INDEX) {
+    function startLifeHold(event) {
+        if (!isAnyLifeMode()) {
+            return;
+        }
+        if (event && (
+            (elements.lifeSettingsBtn && elements.lifeSettingsBtn.contains(event.target)) ||
+            (elements.dobModal && elements.dobModal.contains(event.target))
+        )) {
             return;
         }
         lifeHoldTriggered = false;
@@ -1415,24 +1527,28 @@ document.addEventListener('DOMContentLoaded', () => {
         // Don't cycle mode if clicking on dev controls
         if ((elements.devControls && elements.devControls.contains(event.target)) ||
             (elements.dobModal && elements.dobModal.contains(event.target)) ||
+            (elements.lifeSettingsBtn && elements.lifeSettingsBtn.contains(event.target)) ||
             holdCooldownActive ||
-            (currentModeIndex === LIFE_MODE_INDEX && elements.life.value.contains(event.target) && lifeHoldTriggered)) {
+            (isAnyLifeMode() && lifeHoldTriggered)) {
             return;
         }
         cycleMode();
     });
 
-    elements.life.value.addEventListener('pointerdown', startLifeHold);
-    elements.life.value.addEventListener('pointerup', cancelLifeHoldAndFlag);
-    elements.life.value.addEventListener('pointerleave', stopLifeHold);
-    elements.life.value.addEventListener('pointercancel', stopLifeHold);
-    elements.life.value.addEventListener('touchstart', startLifeHold, { passive: true });
-    elements.life.value.addEventListener('touchend', cancelLifeHoldAndFlag);
-    elements.life.value.addEventListener('mousedown', startLifeHold);
-    elements.life.value.addEventListener('mouseup', cancelLifeHoldAndFlag);
-    elements.life.value.addEventListener('contextmenu', (event) => {
-        event.preventDefault();
-    });
+    if (elements.lifeSettingsBtn) {
+        elements.lifeSettingsBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            openDobModal();
+        });
+    }
+
+    document.body.addEventListener('pointerdown', startLifeHold);
+    document.body.addEventListener('pointerup', cancelLifeHoldAndFlag);
+    document.body.addEventListener('pointercancel', stopLifeHold);
+    document.body.addEventListener('touchstart', startLifeHold, { passive: true });
+    document.body.addEventListener('touchend', cancelLifeHoldAndFlag);
+    document.body.addEventListener('mousedown', startLifeHold);
+    document.body.addEventListener('mouseup', cancelLifeHoldAndFlag);
 
     // Change quote periodically
     setInterval(() => {
@@ -1501,9 +1617,9 @@ document.addEventListener('DOMContentLoaded', () => {
         updateElement(elements.day, getDayName(day), dayProgress);
         updateElement(elements.hour, `${hours}:${minutes.toString().padStart(2, '0')}`, hourProgress);
 
-        if (currentModeIndex === LIFE_MODE_INDEX) {
+        if (isAnyLifeMode()) {
             const lifeStats = getLifeStats(now);
-            updateElement(elements.life, 'Life', lifeStats.progress);
+            updateLifeProgress(lifeStats.progress);
             renderLifeDayGrid(lifeStats);
         }
 

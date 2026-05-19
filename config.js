@@ -50,8 +50,14 @@ const MODES = {
     calculateProgress: function(now, unit, startDate, endDate) {
       return (now - startDate) / (endDate - startDate);
     }
+  },
+  LIFE_CURRENT_PHASE: {
+    name: "LIFE - CURRENT PHASE",
+    calculateProgress: function(now, unit, startDate, endDate) {
+      return (now - startDate) / (endDate - startDate);
+    }
   }
 };
 
 // --- Mode Array for Cycling ------------------
-const MODE_CYCLE = [MODES.ABSOLUTE, MODES.ACTIVE, MODES.WORK, MODES.LIFE]; 
+const MODE_CYCLE = [MODES.ABSOLUTE, MODES.ACTIVE, MODES.WORK, MODES.LIFE, MODES.LIFE_CURRENT_PHASE]; 
