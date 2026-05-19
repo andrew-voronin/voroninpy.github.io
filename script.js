@@ -216,10 +216,12 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    const LIFE_CURRENT_PHASE_CELL_SUBDIVISIONS = 4;
+
     function getLifeTotalDays() {
         if (currentModeIndex === LIFE_CURRENT_PHASE_MODE_INDEX) {
             const phaseInfo = getCurrentPhaseInfo(getCurrentTime());
-            return phaseInfo ? phaseInfo.totalDays : 1;
+            return phaseInfo ? phaseInfo.totalDays * LIFE_CURRENT_PHASE_CELL_SUBDIVISIONS : 1;
         }
         return Math.round(getLifeExpectancyYears() * 365.25);
     }
@@ -1333,9 +1335,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             progress = Math.max(0, Math.min(1, progress));
 
-            const totalDays = phaseInfo.totalDays;
-            const livedDays = Math.floor(progress * totalDays);
-            const currentDayIndex = Math.min(totalDays - 1, livedDays);
+            const totalCells = phaseInfo.totalDays * LIFE_CURRENT_PHASE_CELL_SUBDIVISIONS;
+            const livedDays = Math.floor(progress * totalCells);
+            const currentDayIndex = Math.min(totalCells - 1, livedDays);
             return { progress, livedDays, currentDayIndex };
         }
 
