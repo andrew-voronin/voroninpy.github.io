@@ -319,7 +319,7 @@ document.addEventListener('DOMContentLoaded', () => {
         layoutTotalDays: 0
     };
 
-    const DAY_GRID_CELLS_PER_HOUR = 240;
+    const DAY_GRID_CELLS_PER_HOUR = 1800;
     const RAINBOW_HUE_START = 0;
     const RAINBOW_HUE_END = 300;
     const DAY_GRID_CANVAS_SIZE_BUFFER_PX = 8;
