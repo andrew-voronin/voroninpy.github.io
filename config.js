@@ -45,6 +45,28 @@ const MODES = {
       return calculateWindowProgress(now, unit, startDate, endDate, this.start, this.end);
     }
   },
+  ABSOLUTE_TODAY: {
+    name: "ABSOLUTE - TODAY",
+    calculateProgress: function(now, unit, startDate, endDate) {
+      return (now - startDate) / (endDate - startDate);
+    }
+  },
+  ACTIVE_TODAY: {
+    name: "ACTIVE - TODAY",
+    start: ACTIVE_START,
+    end: ACTIVE_END,
+    calculateProgress: function(now, unit, startDate, endDate) {
+      return calculateWindowProgress(now, unit, startDate, endDate, this.start, this.end);
+    }
+  },
+  WORK_TODAY: {
+    name: "WORK - TODAY",
+    start: WORK_START,
+    end: WORK_END,
+    calculateProgress: function(now, unit, startDate, endDate) {
+      return calculateWindowProgress(now, unit, startDate, endDate, this.start, this.end);
+    }
+  },
   LIFE: {
     name: "LIFE",
     calculateProgress: function(now, unit, startDate, endDate) {
@@ -60,4 +82,13 @@ const MODES = {
 };
 
 // --- Mode Array for Cycling ------------------
-const MODE_CYCLE = [MODES.ABSOLUTE, MODES.ACTIVE, MODES.WORK, MODES.LIFE, MODES.LIFE_CURRENT_PHASE]; 
+const MODE_CYCLE = [
+  MODES.ABSOLUTE,
+  MODES.ABSOLUTE_TODAY,
+  MODES.ACTIVE,
+  MODES.ACTIVE_TODAY,
+  MODES.WORK,
+  MODES.WORK_TODAY,
+  MODES.LIFE,
+  MODES.LIFE_CURRENT_PHASE
+]; 

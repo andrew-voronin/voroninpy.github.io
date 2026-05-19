@@ -46,6 +46,14 @@ document.addEventListener('DOMContentLoaded', () => {
             progress: document.getElementById('life-progress'),
             percentage: document.getElementById('life-percentage')
         },
+        dayGrid: {
+            unit: document.getElementById('day-grid-unit'),
+            progress: document.getElementById('day-grid-progress'),
+            percentage: document.getElementById('day-grid-percentage')
+        },
+        dayGridCanvas: document.getElementById('day-grid-canvas'),
+        dayGridCanvasWrap: document.querySelector('.day-grid-canvas-wrap'),
+        dayGridCurrentMarker: document.getElementById('day-grid-current-marker'),
         lifeSettingsBtn: document.getElementById('life-settings-btn'),
         lifeDaysCanvas: document.getElementById('life-days-canvas'),
         lifeCanvasWrap: document.querySelector('.life-canvas-wrap'),
@@ -67,7 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
         dobConfirm: document.getElementById('dob-confirm'),
         lifeExpectancyYears: document.getElementById('life-expectancy-years'),
         lifePhaseRows: document.getElementById('life-phase-rows'),
-        nonLifeUnits: document.querySelectorAll('.container > .time-unit:not(.life-unit)'),
+        nonLifeUnits: document.querySelectorAll('.container > .time-unit:not(.life-unit):not(.day-grid-unit)'),
         quoteWrap: document.querySelector('.quote'),
         container: document.querySelector('.container')
     };
@@ -112,15 +120,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Current mode
     let currentModeIndex = 0;
-    const LIFE_MODE_INDEX = 3;
-    const LIFE_CURRENT_PHASE_MODE_INDEX = 4;
+    const ABSOLUTE_MODE_INDEX = 0;
+    const ABSOLUTE_TODAY_MODE_INDEX = 1;
+    const ACTIVE_MODE_INDEX = 2;
+    const ACTIVE_TODAY_MODE_INDEX = 3;
+    const WORK_MODE_INDEX = 4;
+    const WORK_TODAY_MODE_INDEX = 5;
+    const LIFE_MODE_INDEX = 6;
+    const LIFE_CURRENT_PHASE_MODE_INDEX = 7;
 
     function isLifeModeIndex(index) {
         return index === LIFE_MODE_INDEX || index === LIFE_CURRENT_PHASE_MODE_INDEX;
     }
 
+    function isDayGridModeIndex(index) {
+        return index === ABSOLUTE_TODAY_MODE_INDEX ||
+            index === ACTIVE_TODAY_MODE_INDEX ||
+            index === WORK_TODAY_MODE_INDEX;
+    }
+
     function isAnyLifeMode() {
         return isLifeModeIndex(currentModeIndex);
+    }
+
+    function isDayGridMode() {
+        return isDayGridModeIndex(currentModeIndex);
+    }
+
+    function isWorkModeIndex(index) {
+        return index === WORK_MODE_INDEX || index === WORK_TODAY_MODE_INDEX;
+    }
+
+    function isActiveModeIndex(index) {
+        return index === ACTIVE_MODE_INDEX || index === ACTIVE_TODAY_MODE_INDEX;
     }
 
     function getModeNames() {
@@ -287,6 +319,35 @@ document.addEventListener('DOMContentLoaded', () => {
         layoutTotalDays: 0
     };
 
+    const DAY_GRID_CELLS_PER_HOUR = 240;
+    const RAINBOW_HUE_START = 0;
+    const RAINBOW_HUE_END = 300;
+    const DAY_GRID_CANVAS_SIZE_BUFFER_PX = 8;
+
+    let isDayGridModeApplied = null;
+    const dayGridCanvasState = {
+        context: null,
+        width: 0,
+        height: 0,
+        columns: 0,
+        rows: 0,
+        cellWidth: 0,
+        cellHeight: 0,
+        gap: 0,
+        offsetX: 0,
+        offsetY: 0,
+        dpr: 1,
+        cssWidth: 0,
+        cssHeight: 0,
+        resizeObserver: null,
+        resizeDebounceTimer: null,
+        lastLivedCells: null,
+        lastCurrentCellIndex: null,
+        animationFrame: null,
+        animationInterval: null,
+        layoutTotalCells: 0
+    };
+
 
     // Simple console logger
     function log(msg) {
@@ -398,7 +459,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function calculateActiveDay(now, startDate, endDate, windowStartStr, windowEndStr) {
         const { windowStart, windowEnd } = getTodayWindow(windowStartStr, windowEndStr);
         
-        if (debugModeActive && currentModeIndex === 2) {
+        if (debugModeActive && isWorkModeIndex(currentModeIndex)) {
             log(`Day: now=${now.toTimeString()}, windowStart=${windowStart.toTimeString()}, windowEnd=${windowEnd.toTimeString()}`);
         }
         
@@ -432,7 +493,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let effectiveDaysInMonth = daysInMonth;
         let effectiveDaysPassed = dayOfMonth - 1;
         
-        if (currentModeIndex === 2) {
+        if (isWorkModeIndex(currentModeIndex)) {
             // For WORK mode, only count weekdays (we need to count the actual weekdays in month)
             effectiveDaysInMonth = 0;
             effectiveDaysPassed = 0;
@@ -462,7 +523,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Check if today is a workday (for WORK mode)
         const isToday = true; // Always add today's contribution
         const dayOfWeek = now.getDay();
-        const isTodayWorkday = (currentModeIndex !== 2) || (dayOfWeek !== 0 && dayOfWeek !== 6);
+        const isTodayWorkday = !isWorkModeIndex(currentModeIndex) || (dayOfWeek !== 0 && dayOfWeek !== 6);
         
         // Add today's contribution if it's a workday
         if (isTodayWorkday && isToday) {
@@ -479,7 +540,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const progress = (totalActiveTime > 0) ? activeTimePassed / totalActiveTime : 0;
         
-        if (debugModeActive && currentModeIndex === 2) {
+        if (debugModeActive && isWorkModeIndex(currentModeIndex)) {
             log(`Month: day=${dayOfMonth}/${daysInMonth}, effective=${effectiveDaysPassed}/${effectiveDaysInMonth}, workday=${isTodayWorkday}, active=${activeTimePassed}/${totalActiveTime}, progress=${progress}`);
         }
         
@@ -507,7 +568,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let effectiveDaysInYear = daysInYear;
         let effectiveDaysPassed = dayOfYear - 1;
         
-        if (currentModeIndex === 2) {
+        if (isWorkModeIndex(currentModeIndex)) {
             // For WORK mode, estimate weekdays (approx 5/7 of total days)
             effectiveDaysInYear = Math.floor(daysInYear * 5 / 7);
             
@@ -534,7 +595,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Check if today is a workday (for WORK mode)
         const dayOfWeek = now.getDay();
-        const isTodayWorkday = (currentModeIndex !== 2) || (dayOfWeek !== 0 && dayOfWeek !== 6);
+        const isTodayWorkday = !isWorkModeIndex(currentModeIndex) || (dayOfWeek !== 0 && dayOfWeek !== 6);
         
         // Add today's contribution if it's a workday
         if (isTodayWorkday) {
@@ -551,7 +612,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const progress = activeTimePassed / totalActiveTime;
         
-        if (debugModeActive && currentModeIndex === 2) {
+        if (debugModeActive && isWorkModeIndex(currentModeIndex)) {
             log(`Year: day=${dayOfYear}/${daysInYear}, effective=${effectiveDaysPassed}/${effectiveDaysInYear}, workday=${isTodayWorkday}, window=${windowStart.toTimeString()}-${windowEnd.toTimeString()}, active=${activeTimePassed}/${totalActiveTime}, progress=${progress}`);
         }
         
@@ -568,7 +629,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (dayOfWeek === 0) dayOfWeek = 7; // Convert Sunday to 7 for easier calculation
         
         // For WORK mode, only count weekdays (1-5)
-        const daysToCount = currentModeIndex === 2 ? 5 : 7;
+        const daysToCount = isWorkModeIndex(currentModeIndex) ? 5 : 7;
         
         // Window duration in milliseconds
         const windowDuration = windowEnd - windowStart;
@@ -579,11 +640,11 @@ document.addEventListener('DOMContentLoaded', () => {
         // Calculate active time passed
         // For WORK mode: Only count weekdays (1-5)
         // For other modes: Count all days
-        const effectiveDayOfWeek = currentModeIndex === 2 ? Math.min(dayOfWeek, 5) : dayOfWeek;
+        const effectiveDayOfWeek = isWorkModeIndex(currentModeIndex) ? Math.min(dayOfWeek, 5) : dayOfWeek;
         let activeTimePassed = (effectiveDayOfWeek - 1) * windowDuration;
         
         // Check if today is a workday (for WORK mode)
-        const isTodayWorkday = (currentModeIndex !== 2) || (dayOfWeek <= 5);
+        const isTodayWorkday = !isWorkModeIndex(currentModeIndex) || (dayOfWeek <= 5);
         
         // Add today's contribution (if it's a counted day)
         if (isTodayWorkday) {
@@ -600,7 +661,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const progress = activeTimePassed / totalActiveTime;
         
-        if (debugModeActive && currentModeIndex === 2) {
+        if (debugModeActive && isWorkModeIndex(currentModeIndex)) {
             log(`Week: dayOfWeek=${dayOfWeek}, effectiveDay=${effectiveDayOfWeek}, workday=${isTodayWorkday}, active=${activeTimePassed}/${totalActiveTime}, progress=${progress}`);
         }
         
@@ -614,7 +675,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     
         // ABSOLUTE mode - original calculation
-        if (currentModeIndex === 0 || isAnyLifeMode()) {
+        if (currentModeIndex === ABSOLUTE_MODE_INDEX || isAnyLifeMode() || isDayGridMode()) {
             return calculateAbsoluteProgress(now, startDate, endDate);
         }
         
@@ -623,7 +684,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // 0 is Sunday, 6 is Saturday
         
         // For WORK mode on weekends, return 100% for day and week units only
-        if (currentModeIndex === 2 && isWeekend && (unit === 'day' || unit === 'week')) {
+        if (isWorkModeIndex(currentModeIndex) && isWeekend && (unit === 'day' || unit === 'week')) {
             if (debugModeActive) {
                 log(`Weekend detected (${getDayName(dayOfWeek)}), returning 100% for ${unit}`);
             }
@@ -631,8 +692,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         // Get time window based on the mode
-        const windowStartStr = currentModeIndex === 1 ? ACTIVE_START : WORK_START;
-        const windowEndStr = currentModeIndex === 1 ? ACTIVE_END : WORK_END;
+        const windowStartStr = isActiveModeIndex(currentModeIndex) ? ACTIVE_START : WORK_START;
+        const windowEndStr = isActiveModeIndex(currentModeIndex) ? ACTIVE_END : WORK_END;
         
         // Hour is always ABSOLUTE
         if (unit === 'hour') {
@@ -676,7 +737,11 @@ document.addEventListener('DOMContentLoaded', () => {
             resetLifeCanvasRenderCache();
         }
 
-        applyLifeModeState();
+        if (isDayGridModeIndex(previousModeIndex) && isDayGridModeIndex(currentModeIndex) && previousModeIndex !== currentModeIndex) {
+            resetDayGridCanvasRenderCache();
+        }
+
+        applyModeState();
         
         // Show mode overlay
         elements.modeOverlay.textContent = modeNames[currentModeIndex];
@@ -1365,6 +1430,423 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.life.percentage.textContent = percentageText;
     }
 
+    function getDayGridWindow(now) {
+        if (currentModeIndex === ABSOLUTE_TODAY_MODE_INDEX) {
+            const windowStart = new Date(now);
+            windowStart.setHours(0, 0, 0, 0);
+            const windowEnd = new Date(now);
+            windowEnd.setHours(23, 59, 59, 999);
+            return {
+                windowStart,
+                windowEnd,
+                totalMs: windowEnd - windowStart + 1,
+                isWeekendForWork: false
+            };
+        }
+
+        if (currentModeIndex === ACTIVE_TODAY_MODE_INDEX) {
+            const { windowStart, windowEnd } = getTodayWindow(ACTIVE_START, ACTIVE_END);
+            return {
+                windowStart,
+                windowEnd,
+                totalMs: windowEnd - windowStart,
+                isWeekendForWork: false
+            };
+        }
+
+        const dayOfWeek = now.getDay();
+        const isWeekendForWork = dayOfWeek === 0 || dayOfWeek === 6;
+        const { windowStart, windowEnd } = getTodayWindow(WORK_START, WORK_END);
+        return {
+            windowStart,
+            windowEnd,
+            totalMs: windowEnd - windowStart,
+            isWeekendForWork
+        };
+    }
+
+    function getDayGridTotalCells() {
+        const { totalMs } = getDayGridWindow(getCurrentTime());
+        const totalHours = totalMs / 3600000;
+        return Math.max(1, Math.round(totalHours * DAY_GRID_CELLS_PER_HOUR));
+    }
+
+    function getDayGridStats(now) {
+        const window = getDayGridWindow(now);
+        const totalCells = getDayGridTotalCells();
+
+        if (window.isWeekendForWork) {
+            return {
+                progress: 1,
+                livedCells: totalCells,
+                currentCellIndex: totalCells - 1,
+                hideMarker: true
+            };
+        }
+
+        let progress = 0;
+        if (now < window.windowStart) {
+            progress = 0;
+        } else if (now > window.windowEnd) {
+            progress = 1;
+        } else {
+            progress = (now - window.windowStart) / window.totalMs;
+        }
+        progress = Math.max(0, Math.min(1, progress));
+
+        const livedCells = Math.floor(progress * totalCells);
+        const currentCellIndex = Math.min(totalCells - 1, livedCells);
+        return { progress, livedCells, currentCellIndex, hideMarker: false };
+    }
+
+    function dayGridHueForCell(cellIndex, totalCells) {
+        const t = cellIndex / Math.max(1, totalCells - 1);
+        return RAINBOW_HUE_START + t * (RAINBOW_HUE_END - RAINBOW_HUE_START);
+    }
+
+    function getDayGridColorForCell(cellIndex, totalCells, lived) {
+        const hue = dayGridHueForCell(cellIndex, totalCells);
+        return lived
+            ? `hsl(${hue}, 80%, 55%)`
+            : `hsla(${hue}, 60%, 45%, 0.22)`;
+    }
+
+    function resetDayGridCanvasRenderCache() {
+        dayGridCanvasState.lastLivedCells = null;
+        dayGridCanvasState.lastCurrentCellIndex = null;
+    }
+
+    function getBestDayGridCanvasLayout(width, height) {
+        const gap = 0;
+        const totalCells = getDayGridTotalCells();
+        let best = null;
+
+        for (let columns = 1; columns <= width; columns++) {
+            const rows = Math.ceil(totalCells / columns);
+            if (rows > height) {
+                continue;
+            }
+            const cellWidth = (width - (columns - 1) * gap) / columns;
+            const cellHeight = (height - (rows - 1) * gap) / rows;
+            if (cellWidth < 1 || cellHeight < 1) {
+                continue;
+            }
+            const minCell = Math.min(cellWidth, cellHeight);
+            if (!best || minCell > Math.min(best.cellWidth, best.cellHeight)) {
+                best = { columns, rows, cellWidth, cellHeight, gap, offsetX: 0, offsetY: 0 };
+            }
+        }
+
+        if (best) {
+            return best;
+        }
+
+        const minColumns = 20;
+        const columns = Math.max(minColumns, Math.min(width, Math.ceil(totalCells / height)));
+        const rows = Math.ceil(totalCells / columns);
+        const cellWidth = (width - (columns - 1) * gap) / columns;
+        const cellHeight = (height - (rows - 1) * gap) / rows;
+        return { columns, rows, cellWidth, cellHeight, gap, offsetX: 0, offsetY: 0 };
+    }
+
+    function resizeDayGridCanvas(force = false) {
+        const canvas = elements.dayGridCanvas;
+        if (!canvas) {
+            return false;
+        }
+
+        const rect = canvas.getBoundingClientRect();
+        let measuredCssWidth = Math.max(1, rect.width);
+        let measuredCssHeight = Math.max(1, rect.height);
+
+        if (measuredCssWidth < 50 || measuredCssHeight < 50) {
+            const vv = window.visualViewport;
+            const fallbackWidth = (canvas.offsetWidth > 0 ? canvas.offsetWidth : (vv ? vv.width : window.innerWidth));
+            const fallbackHeight = (canvas.offsetHeight > 0 ? canvas.offsetHeight : (vv ? vv.height : window.innerHeight));
+            if (measuredCssWidth < 50 && fallbackWidth > 0) {
+                measuredCssWidth = fallbackWidth;
+            }
+            if (measuredCssHeight < 50 && fallbackHeight > 0) {
+                measuredCssHeight = fallbackHeight;
+            }
+        }
+
+        const previousCssWidth = dayGridCanvasState.cssWidth || measuredCssWidth;
+        const previousCssHeight = dayGridCanvasState.cssHeight || measuredCssHeight;
+        const trustPrevious = (w, h) => w >= 50 && h >= 50;
+        const effectiveCssWidth = trustPrevious(previousCssWidth, previousCssHeight) && Math.abs(measuredCssWidth - previousCssWidth) <= LIFE_CANVAS_CSS_HYSTERESIS_PX
+            ? previousCssWidth
+            : measuredCssWidth;
+        const effectiveCssHeight = trustPrevious(previousCssWidth, previousCssHeight) && Math.abs(measuredCssHeight - previousCssHeight) <= LIFE_CANVAS_CSS_HYSTERESIS_PX
+            ? previousCssHeight
+            : measuredCssHeight;
+        const dpr = window.devicePixelRatio || 1;
+        const width = Math.max(1, Math.round(effectiveCssWidth * dpr));
+        const height = Math.max(1, Math.round(effectiveCssHeight * dpr));
+
+        if (!force && dayGridCanvasState.width === width && dayGridCanvasState.height === height && dayGridCanvasState.dpr === dpr) {
+            return false;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const context = canvas.getContext('2d', { alpha: false });
+        context.imageSmoothingEnabled = false;
+
+        const layout = getBestDayGridCanvasLayout(width, height);
+
+        dayGridCanvasState.context = context;
+        dayGridCanvasState.width = width;
+        dayGridCanvasState.height = height;
+        dayGridCanvasState.cssWidth = effectiveCssWidth;
+        dayGridCanvasState.cssHeight = effectiveCssHeight;
+        dayGridCanvasState.dpr = dpr;
+        dayGridCanvasState.columns = layout.columns;
+        dayGridCanvasState.rows = layout.rows;
+        dayGridCanvasState.cellWidth = layout.cellWidth;
+        dayGridCanvasState.cellHeight = layout.cellHeight;
+        dayGridCanvasState.gap = layout.gap;
+        dayGridCanvasState.offsetX = layout.offsetX;
+        dayGridCanvasState.offsetY = layout.offsetY;
+        dayGridCanvasState.layoutTotalCells = getDayGridTotalCells();
+
+        resetDayGridCanvasRenderCache();
+        return true;
+    }
+
+    function setDayGridCanvasExplicitSize() {
+        if (!isDayGridMode() || !elements.dayGridCanvas) {
+            return;
+        }
+
+        const canvas = elements.dayGridCanvas;
+        const vv = window.visualViewport;
+        const viewportHeight = (vv && vv.height > 0) ? vv.height : (window.innerHeight || document.documentElement.clientHeight || 400);
+        const canvasRect = canvas.getBoundingClientRect();
+        const canvasTop = canvasRect.top;
+        const availableHeight = Math.max(1, viewportHeight - canvasTop - DAY_GRID_CANVAS_SIZE_BUFFER_PX);
+        canvas.style.height = availableHeight + 'px';
+        canvas.style.width = '100%';
+        resizeDayGridCanvas(true);
+    }
+
+    function drawDayGridCell(index, fillStyle) {
+        const { context, columns, cellWidth, cellHeight, gap, offsetX, offsetY } = dayGridCanvasState;
+        if (!context) {
+            return;
+        }
+
+        const column = index % columns;
+        const row = Math.floor(index / columns);
+        const x = offsetX + column * (cellWidth + gap);
+        const y = offsetY + row * (cellHeight + gap);
+        context.fillStyle = fillStyle;
+        context.fillRect(x, y, cellWidth, cellHeight);
+    }
+
+    function clearDayGridCanvas() {
+        const { context, width, height } = dayGridCanvasState;
+        if (!context) {
+            return;
+        }
+
+        context.fillStyle = '#05070d';
+        context.fillRect(0, 0, width, height);
+    }
+
+    function updateDayGridProgress(progress) {
+        elements.dayGrid.progress.style.width = `${progress * 100}%`;
+        let percentageText = `${(progress * 100).toFixed(8)}%`;
+        if (debugModeActive) {
+            percentageText += ` [${progress.toFixed(8)}]`;
+        }
+        elements.dayGrid.percentage.textContent = percentageText;
+    }
+
+    function updateDayGridCurrentMarker(dayGridStats) {
+        const marker = elements.dayGridCurrentMarker;
+        const wrap = elements.dayGridCanvasWrap;
+        if (!marker || !wrap || !isDayGridMode()) {
+            return;
+        }
+
+        const { livedCells, currentCellIndex, hideMarker } = dayGridStats;
+        const totalCells = getDayGridTotalCells();
+
+        if (!dayGridCanvasState.context || hideMarker || livedCells >= totalCells) {
+            marker.classList.add('hidden');
+            return;
+        }
+
+        const canvas = elements.dayGridCanvas;
+        const wrapRect = wrap.getBoundingClientRect();
+        const canvasRect = canvas.getBoundingClientRect();
+        const style = window.getComputedStyle(canvas);
+        const borderLeft = parsePx(style.borderLeftWidth);
+        const borderRight = parsePx(style.borderRightWidth);
+        const borderTop = parsePx(style.borderTopWidth);
+        const borderBottom = parsePx(style.borderBottomWidth);
+        const contentWidth = canvasRect.width - borderLeft - borderRight;
+        const contentHeight = canvasRect.height - borderTop - borderBottom;
+        const { columns, cellWidth, cellHeight, gap, offsetX, offsetY, width: bufW, height: bufH } = dayGridCanvasState;
+
+        if (bufW <= 0 || bufH <= 0 || contentWidth <= 0 || contentHeight <= 0) {
+            marker.classList.add('hidden');
+            return;
+        }
+
+        const scaleX = contentWidth / bufW;
+        const scaleY = contentHeight / bufH;
+        const column = currentCellIndex % columns;
+        const row = Math.floor(currentCellIndex / columns);
+        const xBuf = offsetX + column * (cellWidth + gap);
+        const yBuf = offsetY + row * (cellHeight + gap);
+        const contentLeft = canvasRect.left + borderLeft - wrapRect.left;
+        const contentTop = canvasRect.top + borderTop - wrapRect.top;
+        const left = contentLeft + xBuf * scaleX;
+        const top = contentTop + yBuf * scaleY;
+        const w = cellWidth * scaleX;
+        const h = cellHeight * scaleY;
+        marker.style.left = Math.round(left * 10) / 10 + 'px';
+        marker.style.top = Math.round(top * 10) / 10 + 'px';
+        marker.style.width = Math.max(1, Math.round(w * 10) / 10) + 'px';
+        marker.style.height = Math.max(1, Math.round(h * 10) / 10) + 'px';
+        marker.classList.remove('hidden');
+    }
+
+    function renderDayGrid(dayGridStats) {
+        const { livedCells, currentCellIndex } = dayGridStats;
+        const totalCells = getDayGridTotalCells();
+
+        if (dayGridCanvasState.layoutTotalCells !== totalCells) {
+            resetDayGridCanvasRenderCache();
+            resizeDayGridCanvas(true);
+        }
+        if (!dayGridCanvasState.context) {
+            resizeDayGridCanvas(true);
+        }
+        if (!dayGridCanvasState.context) {
+            return;
+        }
+
+        if (dayGridCanvasState.lastLivedCells === livedCells && dayGridCanvasState.lastCurrentCellIndex === currentCellIndex) {
+            return;
+        }
+
+        if (dayGridCanvasState.lastLivedCells === null) {
+            clearDayGridCanvas();
+            for (let index = 0; index < totalCells; index++) {
+                drawDayGridCell(index, getDayGridColorForCell(index, totalCells, index < livedCells));
+            }
+        } else if (dayGridCanvasState.lastLivedCells !== livedCells) {
+            const previousLivedCells = dayGridCanvasState.lastLivedCells;
+            if (previousLivedCells < livedCells) {
+                for (let index = previousLivedCells; index < livedCells; index++) {
+                    drawDayGridCell(index, getDayGridColorForCell(index, totalCells, true));
+                }
+            } else {
+                for (let index = livedCells; index < previousLivedCells; index++) {
+                    drawDayGridCell(index, getDayGridColorForCell(index, totalCells, false));
+                }
+            }
+        }
+
+        const previousCurrentCellIndex = dayGridCanvasState.lastCurrentCellIndex;
+        if (typeof previousCurrentCellIndex === 'number' && previousCurrentCellIndex < totalCells) {
+            drawDayGridCell(
+                previousCurrentCellIndex,
+                getDayGridColorForCell(previousCurrentCellIndex, totalCells, previousCurrentCellIndex < livedCells)
+            );
+        }
+
+        if (livedCells < totalCells) {
+            drawDayGridCell(
+                currentCellIndex,
+                getDayGridColorForCell(currentCellIndex, totalCells, currentCellIndex < livedCells)
+            );
+        }
+
+        dayGridCanvasState.lastLivedCells = livedCells;
+        dayGridCanvasState.lastCurrentCellIndex = currentCellIndex;
+        updateDayGridCurrentMarker(dayGridStats);
+    }
+
+    function stopDayGridAnimationLoop() {
+        if (dayGridCanvasState.animationFrame) {
+            cancelAnimationFrame(dayGridCanvasState.animationFrame);
+            dayGridCanvasState.animationFrame = null;
+        }
+        if (dayGridCanvasState.animationInterval) {
+            clearInterval(dayGridCanvasState.animationInterval);
+            dayGridCanvasState.animationInterval = null;
+        }
+    }
+
+    function startDayGridAnimationLoop() {
+        if (dayGridCanvasState.animationFrame) {
+            return;
+        }
+
+        const tick = () => {
+            if (!isDayGridMode()) {
+                dayGridCanvasState.animationFrame = null;
+                return;
+            }
+            updateDayGridCurrentMarker(getDayGridStats(getCurrentTime()));
+            dayGridCanvasState.animationFrame = requestAnimationFrame(tick);
+        };
+        dayGridCanvasState.animationFrame = requestAnimationFrame(tick);
+
+        dayGridCanvasState.animationInterval = setInterval(() => {
+            if (!isDayGridMode()) {
+                return;
+            }
+            updateDayGridCurrentMarker(getDayGridStats(getCurrentTime()));
+        }, 200);
+    }
+
+    function createDayGridCanvas() {
+        resizeDayGridCanvas(true);
+
+        if (typeof ResizeObserver !== 'undefined' && elements.dayGridCanvas) {
+            dayGridCanvasState.resizeObserver = new ResizeObserver(() => {
+                clearTimeout(dayGridCanvasState.resizeDebounceTimer);
+                dayGridCanvasState.resizeDebounceTimer = setTimeout(() => {
+                    if (!isDayGridMode()) {
+                        return;
+                    }
+                    const hasResized = resizeDayGridCanvas();
+                    if (hasResized) {
+                        renderDayGrid(getDayGridStats(getCurrentTime()));
+                    }
+                }, LIFE_RESIZE_DEBOUNCE_MS);
+            });
+            dayGridCanvasState.resizeObserver.observe(elements.dayGridCanvas);
+        }
+
+        function resizeCanvasInDayGridMode() {
+            if (!isDayGridMode()) {
+                return;
+            }
+            requestAnimationFrame(() => {
+                if (!isDayGridMode()) {
+                    return;
+                }
+                setDayGridCanvasExplicitSize();
+                const stats = getDayGridStats(getCurrentTime());
+                renderDayGrid(stats);
+                updateDayGridCurrentMarker(stats);
+            });
+        }
+
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', resizeCanvasInDayGridMode);
+            window.visualViewport.addEventListener('scroll', resizeCanvasInDayGridMode);
+        }
+        window.addEventListener('resize', resizeCanvasInDayGridMode);
+    }
+
     function renderLifeDayGrid(lifeStats) {
         const { livedDays, currentDayIndex } = lifeStats;
         if (lifeCanvasState.layoutTotalDays !== getLifeTotalDays()) {
@@ -1434,8 +1916,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return dob;
     }
 
-    function applyLifeModeState() {
+    function applyModeState() {
         const isLifeMode = isAnyLifeMode();
+        const isDayGrid = isDayGridMode();
+        const isSpecialView = isLifeMode || isDayGrid;
 
         if (elements.lifeSettingsBtn) {
             elements.lifeSettingsBtn.classList.toggle('hidden', !isLifeMode);
@@ -1451,44 +1935,92 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (isLifeModeApplied === isLifeMode) {
+        if (isDayGridModeApplied === isDayGrid && isDayGrid) {
+            resetDayGridCanvasRenderCache();
+            resizeDayGridCanvas(true);
+            setDayGridCanvasExplicitSize();
+            const dayGridStats = getDayGridStats(getCurrentTime());
+            renderDayGrid(dayGridStats);
+            updateDayGridCurrentMarker(dayGridStats);
+            return;
+        }
+
+        if (isLifeModeApplied === isLifeMode && isDayGridModeApplied === isDayGrid) {
             return;
         }
 
         isLifeModeApplied = isLifeMode;
+        isDayGridModeApplied = isDayGrid;
+
         document.body.classList.toggle('life-mode', isLifeMode);
+        document.body.classList.toggle('day-grid-mode', isDayGrid);
         elements.life.unit.classList.toggle('hidden', !isLifeMode);
-        elements.nonLifeUnits.forEach(unit => unit.classList.toggle('hidden', isLifeMode));
+        elements.dayGrid.unit.classList.toggle('hidden', !isDayGrid);
+        elements.nonLifeUnits.forEach(unit => unit.classList.toggle('hidden', isSpecialView));
         if (elements.quoteWrap) {
-            elements.quoteWrap.classList.toggle('hidden', isLifeMode);
+            elements.quoteWrap.classList.toggle('hidden', isSpecialView);
         }
+
         if (!isLifeMode) {
             closeDobModal();
             stopLifeAnimationLoop();
+        }
+
+        if (!isDayGrid) {
+            stopDayGridAnimationLoop();
+        }
+
+        if (!isSpecialView) {
             return;
         }
 
-        resetLifeCanvasRenderCache();
-        elements.lifeDaysCanvas.getBoundingClientRect();
-        setLifeCanvasExplicitSize();
-        const lifeStats = getLifeStats(getCurrentTime());
-        renderLifeDayGrid(lifeStats);
-        updateLifeCurrentDayMarker(lifeStats);
-        startLifeAnimationLoop();
+        if (isLifeMode) {
+            resetLifeCanvasRenderCache();
+            elements.lifeDaysCanvas.getBoundingClientRect();
+            setLifeCanvasExplicitSize();
+            const lifeStats = getLifeStats(getCurrentTime());
+            renderLifeDayGrid(lifeStats);
+            updateLifeCurrentDayMarker(lifeStats);
+            startLifeAnimationLoop();
+        }
+
+        if (isDayGrid) {
+            resetDayGridCanvasRenderCache();
+            elements.dayGridCanvas.getBoundingClientRect();
+            setDayGridCanvasExplicitSize();
+            const dayGridStats = getDayGridStats(getCurrentTime());
+            renderDayGrid(dayGridStats);
+            updateDayGridCurrentMarker(dayGridStats);
+            startDayGridAnimationLoop();
+        }
 
         requestAnimationFrame(() => {
-            if (!isAnyLifeMode()) return;
-            setLifeCanvasExplicitSize();
-            const stats = getLifeStats(getCurrentTime());
-            renderLifeDayGrid(stats);
-            updateLifeCurrentDayMarker(stats);
+            if (isAnyLifeMode()) {
+                setLifeCanvasExplicitSize();
+                const lifeStats = getLifeStats(getCurrentTime());
+                renderLifeDayGrid(lifeStats);
+                updateLifeCurrentDayMarker(lifeStats);
+            }
+            if (isDayGridMode()) {
+                setDayGridCanvasExplicitSize();
+                const dayGridStats = getDayGridStats(getCurrentTime());
+                renderDayGrid(dayGridStats);
+                updateDayGridCurrentMarker(dayGridStats);
+            }
         });
         setTimeout(() => {
-            if (!isAnyLifeMode()) return;
-            setLifeCanvasExplicitSize();
-            const stats = getLifeStats(getCurrentTime());
-            renderLifeDayGrid(stats);
-            updateLifeCurrentDayMarker(stats);
+            if (isAnyLifeMode()) {
+                setLifeCanvasExplicitSize();
+                const lifeStats = getLifeStats(getCurrentTime());
+                renderLifeDayGrid(lifeStats);
+                updateLifeCurrentDayMarker(lifeStats);
+            }
+            if (isDayGridMode()) {
+                setDayGridCanvasExplicitSize();
+                const dayGridStats = getDayGridStats(getCurrentTime());
+                renderDayGrid(dayGridStats);
+                updateDayGridCurrentMarker(dayGridStats);
+            }
         }, 400);
     }
 
@@ -1625,6 +2157,12 @@ document.addEventListener('DOMContentLoaded', () => {
             renderLifeDayGrid(lifeStats);
         }
 
+        if (isDayGridMode()) {
+            const dayGridStats = getDayGridStats(now);
+            updateDayGridProgress(dayGridStats.progress);
+            renderDayGrid(dayGridStats);
+        }
+
         // Pulse effect on active progress bars
         addPulseEffect();
     }
@@ -1672,7 +2210,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     setupDobControls();
     createLifeDayGrid();
-    applyLifeModeState();
+    createDayGridCanvas();
+    applyModeState();
 
     // Initialize and update every 100ms for smooth animations
     updateTime();
